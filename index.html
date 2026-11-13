@@ -1,6 +1,9 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>CUDA Accelerated Path Tracing with ReSTIR GI</title>
     <script src='https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=default'></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
@@ -61,16 +64,15 @@
 
         <h2>Summary</h2>
         <p>Accelerate path tracing using a GPU and implement modern path resampling algorithms such as ReSTIR. Further
-            exploration involves modern resampling such as ReSTIR GI and AI denoising (Intel OIDN).</p>
+            exploration involves modern resampling such as ReSTIR GI and ReSTIR PT, and AI denoising (Intel OIDN).</p>
 
         <h2>Problem Description</h2>
         <p>Path tracing is a highly hardware intensive task. The homework Path Tracer implementation utilizes the CPU,
             where rendering large and complex scenes at higher resolutions would lead to long runtimes in the
-            realm of hours. Accelerating the time for rendering graphics is an important problem in the industry from
+            realm of hours. While the base implementation explores thread level parallelism, it leaves open the idea of exploring further
+            thread and data parallelism using the GPU. Accelerating the time for rendering graphics is an important problem in the industry from
             rendering complex animations to real time rendering for video games. To address this we want to improve the
-            performance of the class path tracer implementation from high levels of parallelism. While we explore thread
-            level parallelism in the base implementation of our path tracer, we leave open the idea of exploring further
-            thread and data parallelism using the GPU. Further we seek to implement path resampling algorithms such as
+            performance of the class path tracer implementation from high levels of parallelism. Further we seek to implement path resampling algorithms such as
             ReSTIR and ReSTIR GI. Past this we would like to explore modern developments such as ReSTIR PT. In
             addition, given enough time, we would like to explore AI based denoisers such as Intel Open Image Denoise
             (OIDN).</p>
@@ -79,7 +81,7 @@
         <p>Our baseline goal is that we can implement some form of realtime raytracing, while possibly not up to a
             visually strong standard, an operational standard. Thus we anticipate that a successful project hinges upon
             successfully implementing a fully CUDA accelerated path tracer. We can demonstrate speedup by a significant
-            increase in ray calculations per second, alongside total render time. While we anticipate that we can
+            increase in rays per second, alongside total render time. While we anticipate that we can
             achieve further speed and quality increases within the four weeks by implementing modern algorithms, we do
             not fully understand how taxing implementing each of these algorithms are. Therefore, they are left as
             mostly stretch goals. Ultimately, we hope to have a realtime ray traced scene renderer for realtime scene
@@ -124,9 +126,9 @@
         </ul>
 
         <h3>Performance measurement</h3>
-        <p>We will measure performance by recording rendering times in real time (Wall-clock time)</p>
+        <p>We will measure performance by recording rendering times (wall-clock time) and qualitative image quality side-by-side</p>
         <ul>
-            <li>Bar chart comparing times and image quality for different images, comparing:
+            <li>Bar chart comparing times and side-by-side comparisons of image quality for different images, comparing:
                 <ul>
                     <li>CPU only execution</li>
                     <li>CUDA</li>
@@ -167,7 +169,7 @@
         <ul>
             <li>Fully rendered scenes
                 <ul>
-                    <li>CB Scenes</li>
+                    <li>Cornell Box Scenes</li>
                 </ul>
             </li>
             <li>Add realtime rendering functionality
@@ -188,7 +190,7 @@
         <ul>
             <li>ReSTIR GI
                 <ul>
-                    <li>Priority as for better direct lighting at low sample rates</li>
+                    <li>Priority for implementation as it allows for better indirect lighting at low sample rates</li>
                 </ul>
             </li>
             <li>ReSTIR PT
