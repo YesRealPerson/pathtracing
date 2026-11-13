@@ -1,6 +1,7 @@
 <html>
 
 <head>
+    <title>CUDA Accelerated Path Tracing with ReSTIR GI</title>
     <script src='https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=default'></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -25,6 +26,15 @@
             font-family: 'Inter', sans-serif;
         }
 
+        .subtitle {
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .names {
+            text-align: center;
+        }
+
         .data-table {
             border-collapse: collapse;
             text-align: center;
@@ -45,11 +55,169 @@
 
 <body>
     <div class="container">
-        <h1>CS184/284A Fall 2026 Final Project Proposal</h1>
-        <div style="text-align: center;">Names: Stephen Park, Connor Lu, Charlie Si, Abe</div>
-        <h2>Problem</h2>
-        <h2>Goals & Deliverables</h2>
+        <h1>CUDA Accelerated Path Tracing with ReSTIR GI</h1>
+        <div class="subtitle">PUT THE RAYS IN THE TRIANGLE</div>
+        <div class="names">Stephen Park, Connor Lu, Abe Karikkineth, Charlie Si</div>
+
+        <h2>Summary</h2>
+        <p>Accelerate path tracing using a GPU and implement modern path resampling algorithms such as ReSTIR. Further
+            exploration involves modern resampling such as ReSTIR GI and AI denoising (Intel OIDN).</p>
+
+        <h2>Problem Description</h2>
+        <p>Path tracing is a highly hardware intensive task. The homework Path Tracer implementation utilizes the CPU,
+            where rendering large and complex scenes at higher resolutions would lead to long runtimes in the
+            realm of hours. Accelerating the time for rendering graphics is an important problem in the industry from
+            rendering complex animations to real time rendering for video games. To address this we want to improve the
+            performance of the class path tracer implementation from high levels of parallelism. While we explore thread
+            level parallelism in the base implementation of our path tracer, we leave open the idea of exploring further
+            thread and data parallelism using the GPU. Further we seek to implement path resampling algorithms such as
+            ReSTIR and ReSTIR GI. Past this we would like to explore modern developments such as ReSTIR PT. In
+            addition, given enough time, we would like to explore AI based denoisers such as Intel Open Image Denoise
+            (OIDN).</p>
+
+        <h2>Goals and Deliverables</h2>
+        <p>Our baseline goal is that we can implement some form of realtime raytracing, while possibly not up to a
+            visually strong standard, an operational standard. Thus we anticipate that a successful project hinges upon
+            successfully implementing a fully CUDA accelerated path tracer. We can demonstrate speedup by a significant
+            increase in ray calculations per second, alongside total render time. While we anticipate that we can
+            achieve further speed and quality increases within the four weeks by implementing modern algorithms, we do
+            not fully understand how taxing implementing each of these algorithms are. Therefore, they are left as
+            mostly stretch goals. Ultimately, we hope to have a realtime ray traced scene renderer for realtime scene
+            navigation.</p>
+
+        <h3>Plan to Deliver</h3>
+        <ul>
+            <li>Accelerate Path Tracer with CUDA
+                <ul>
+                    <li>Significant path tracing speedup</li>
+                </ul>
+            </li>
+            <li>Implement ReSTIR
+                <ul>
+                    <li>Less noise at lower sample rates for direct lighting.</li>
+                    <li>Stores a light sample per pixel into a reservoir, drawing from neighboring and previous frame reservoirs at render.</li>
+                </ul>
+            </li>
+        </ul>
+
+        <h3>Hope to Deliver</h3>
+        <ul>
+            <li>Implement ReSTIR GI
+                <ul>
+                    <li>Implements reservoirs for indirect light as well.</li>
+                </ul>
+            </li>
+            <li>OIDN
+                <ul>
+                    <li>An AI image denoising model that we can use so we don't have to use as many rays per pixel.</li>
+                </ul>
+            </li>
+        </ul>
+
+        <h3>Stretch</h3>
+        <ul>
+            <li>ReSTIR PT
+                <ul>
+                    <li>Full path reuse for better quality on glossy and specular surfaces</li>
+                </ul>
+            </li>
+        </ul>
+
+        <h3>Performance measurement</h3>
+        <p>We will measure performance by recording rendering times in real time (Wall-clock time)</p>
+        <ul>
+            <li>Bar chart comparing times and image quality for different images, comparing:
+                <ul>
+                    <li>CPU only execution</li>
+                    <li>CUDA</li>
+                    <li>ReSTIR</li>
+                    <li>ReSTIR GI</li>
+                    <li>ReSTIR PT</li>
+                    <li>OIDN</li>
+                    <li>Entire optimization pipeline</li>
+                </ul>
+            </li>
+            <li>We can also record CPU and GPU only timings to test for any bottlenecks</li>
+        </ul>
+
         <h2>Schedule</h2>
+        <h3>Week 1</h3>
+        <ul>
+            <li>Reorganize existing functions into CUDA friendly code
+                <ul>
+                    <li>Pack data into &ldquo;Struct of Arrays&rdquo;</li>
+                </ul>
+            </li>
+            <li>CUDA Equivalents
+                <ul>
+                    <li>Triangle ray intersections</li>
+                    <li>Sphere ray intersections</li>
+                    <li>BSDF evaluation</li>
+                    <li>BVH intersection</li>
+                </ul>
+            </li>
+            <li>Work for trivial individual examples
+                <ul>
+                    <li>Toy cases with verifiable output</li>
+                </ul>
+            </li>
+        </ul>
+
+        <h3>Week 2</h3>
+        <ul>
+            <li>Fully rendered scenes
+                <ul>
+                    <li>CB Scenes</li>
+                </ul>
+            </li>
+            <li>Add realtime rendering functionality
+                <ul>
+                    <li>Not completely realtime yet but just sequential renders</li>
+                    <li>WASD/mouse camera movement</li>
+                </ul>
+            </li>
+        </ul>
+
+        <h3>Week 3</h3>
+        <ul>
+            <li>ReSTIR</li>
+            <li>OIDN</li>
+        </ul>
+
+        <h3>Week 4</h3>
+        <ul>
+            <li>ReSTIR GI
+                <ul>
+                    <li>Priority as for better direct lighting at low sample rates</li>
+                </ul>
+            </li>
+            <li>ReSTIR PT
+                <ul>
+                    <li>
+                        Requires adding more BSDFs (glossy, specular, etc)
+                    </li>
+                </ul>
+                </li>
+            <li>Final code cleanup &amp; demo renders</li>
+        </ul>
+
         <h2>Resources</h2>
+        <ul>
+            <li>Hardware: Connor&rsquo;s 5090, Stephen&rsquo;s 4080 Super, Charlie's 3070</li>
+            <li><a href="https://docs.nvidia.com/cuda/">CUDA Docs</a>
+                <ul>
+                    <li><a href="https://docs.nvidia.com/cuda/cuda-programming-guide/index.html">CUDA Programming
+                            Guide</a></li>
+                    <li><a href="https://github.com/NVIDIA/cuda-samples">CUDA Code Samples</a></li>
+                </ul>
+            </li>
+            <li><a href="https://cs.dartmouth.edu/~wjarosz/publications/bitterli20spatiotemporal.html">ReSTIR</a></li>
+            <li><a href="https://research.nvidia.com/publication/2021-06_restir-gi-path-resampling-real-time-path-tracing">ReSTIR
+                    GI</a></li>
+            <li><a href="https://research.nvidia.com/publication/2022-07_generalized-resampled-importance-sampling-foundations-restir">ReSTIR PT</a></li>
+            <li><a href="https://www.openimagedenoise.org/">Intel OIDN</a></li>
+        </ul>
     </div>
 </body>
+
+</html>
