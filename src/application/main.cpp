@@ -1,14 +1,3 @@
-#ifdef __linux__
-#include <linux/types.h>
-#endif
-#ifdef _WIN32
-#include "util/win32/getopt.h"
-#else
-#include <unistd.h>
-#endif
-
-
-
 #include "CGL/CGL.h"
 #include "CGL/viewer.h"
 
@@ -21,6 +10,11 @@ typedef uint32_t gid_t;
 typedef uint32_t gid_t;
 
 #include <iostream>
+#ifdef _WIN32
+#include "util/win32/getopt.h"
+#else
+#include <unistd.h>
+#endif
 #include "pathtracer_launcher_gui.h"
 
 using namespace std;

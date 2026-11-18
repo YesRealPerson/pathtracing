@@ -652,8 +652,7 @@ void RaytracedRenderer::autofocus(Vector2D loc) {
   pt->autofocus(loc);
 }
 
-void RaytracedRenderer::worker_thread() { 
-  // While there's work in the work queue tray trace the tile, doubt much optimziation to be made here
+void RaytracedRenderer::worker_thread() {
 
   Timer timer;
   timer.start();

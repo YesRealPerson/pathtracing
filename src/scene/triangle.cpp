@@ -28,8 +28,9 @@ bool Triangle::has_intersection(const Ray &r) const {
   // function records the "intersection" while this function only tests whether
   // there is a intersection.
 
-	Intersection i;
-	return this->intersect(r, &i);
+
+  return true;
+
 }
 
 bool Triangle::intersect(const Ray &r, Intersection *isect) const {
@@ -37,29 +38,6 @@ bool Triangle::intersect(const Ray &r, Intersection *isect) const {
   // implement ray-triangle intersection. When an intersection takes
   // place, the Intersection data should be updated accordingly
 
-	// Moller Trumbore idk what im doing its 2am
-	constexpr double epsilon = 1e-8; // floating point bs
-	Vector3D E1 = this->p2 - this->p1;
-	Vector3D E2 = this->p3 - this->p1;
-	Vector3D S = r.o - this->p1; // b in Ax=b
-	Vector3D S1 = cross(r.d, E2);
-	Vector3D S2 = cross(S, E1);
-
-	double parallel = dot(S1, E1);
-	if (abs(parallel) < epsilon) return false;
-	double det = 1.0 / parallel;
-	double t = dot(S2, E2) * det;
-	if (t < r.min_t || t > r.max_t) return false;
-	double b1 = dot(S1, S) * det;
-	if (b1 < 0) return false;
-	double b2 = dot(S2, r.d) * det;
-	if (b2 < 0 || b2+b1 > 1) return false;
-	isect->t = t;
-	double alpha = 1 - b1 - b2;
-	isect->n = (alpha * this->n1 + b1 * this->n2 + b2 * this->n3).unit();
-	isect->primitive = this;
-	isect->bsdf = this->get_bsdf();
-  r.max_t = isect->t; 
 
   return true;
 
