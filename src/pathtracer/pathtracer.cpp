@@ -183,12 +183,37 @@ void PathTracer::raytrace_pixel(size_t x, size_t y) {
   // Use the command line parameters "samplesPerBatch" and "maxTolerance"
   int num_samples = ns_aa;          // total samples to evaluate
   Vector2D origin = Vector2D(x, y); // bottom left corner of the pixel
+  Vector3D result;
+  float s1 = 0.0f;
+  float s2 = 0.0f;
+  int n = num_samples;
+  for (int i = 0; i < n; i++) {
+        Vector2D random = origin+this->gridSampler->get_sample();
+        random.x /= this->sampleBuffer.w;
+        random.y /= this->sampleBuffer.h;
+        Ray r = this->camera->generate_ray(random.x, random.y);
+        r.depth = this->max_ray_depth;
+        Vector3D out = this->est_radiance_global_illumination(r);
+        result += out;
+        float ill = out.illum();
+        s1 += ill;
+        s2 += ill*ill;
 
-
-  sampleBuffer.update_pixel(Vector3D(0.2, 1.0, 0.8), x, y);
-  sampleCountBuffer[x + y * sampleBuffer.w] = num_samples;
-
-
+        if ((i+1) % this->samplesPerBatch == 0){
+          // n = i+1
+          float s = (s2-s1*s1/(i+1))/i;
+          s = sqrt(s);
+          float mu = s1/(i+1);
+          float I = 1.96f * (s/sqrt(i+1));
+          if(I <= this->maxTolerance*mu) {
+            n = i+1;
+            break;
+          }
+        }
+  }
+  result /= n;
+  sampleBuffer.update_pixel(result, x, y);
+  sampleCountBuffer[x + y * sampleBuffer.w] = n;
 }
 
 void PathTracer::autofocus(Vector2D loc) {

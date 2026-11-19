@@ -6,12 +6,18 @@
 #include <algorithm>
 #include <string>
 
+#include "cuda_compat.h"
+
 namespace CGL {
 
+// Double precision constants.
 #define PI (3.14159265358979323)
 #define EPS_D (0.00000000001)
-#define EPS_F (0.00001f)
 #define INF_D (std::numeric_limits<double>::infinity())
+
+// Single precision constants.
+#define PI_F (3.14159265358979323f)
+#define EPS_F (0.00001f)
 #define INF_F (std::numeric_limits<float>::infinity())
 
 // MOUSE INPUTS //
@@ -48,16 +54,16 @@ namespace CGL {
   Takes any kind of number and converts from degrees to radians.
 */
 template<typename T>
-inline T radians(T deg) {
-  return deg * (PI / 180);
+CGL_INLINE T radians(T deg) {
+  return deg * (T(PI) / T(180));
 }
 
 /*
   Takes any kind of number and converts from radians to degrees.
 */
 template<typename T>
-inline T degrees(T rad) {
-  return rad * (180 / PI);
+CGL_INLINE T degrees(T rad) {
+  return rad * (T(180) / T(PI));
 }
 
 /*
@@ -67,8 +73,9 @@ inline T degrees(T rad) {
         common mistake is to pass an int for x and size_ts for lo and hi.
 */
 template<typename T>
-inline T clamp(T x, T lo, T hi) {
-  return std::min(std::max(x, lo), hi);
+CGL_INLINE T clamp(T x, T lo, T hi) {
+  // Written without std::min/std::max so it is usable in device code.
+  return x < lo ? lo : (hi < x ? hi : x);
 }
 
 /*

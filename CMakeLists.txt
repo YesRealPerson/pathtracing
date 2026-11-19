@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.18)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project(Assignment3)
 
@@ -7,6 +7,7 @@ project(Assignment3)
 #-------------------------------------------------------------------------------
 option(BUILD_DEBUG     "Build with debug settings"    OFF)
 option(BUILD_DOCS      "Build documentation"          OFF)
+option(BUILD_CUDA      "Build with CUDA (GPU) support" ON)
 
 
 set(BUILD_DEBUG ${BUILD_DEBUG} CACHE BOOL "Build debug" FORCE)
@@ -16,8 +17,51 @@ if (BUILD_DEBUG)
 endif()
 
 #-------------------------------------------------------------------------------
+# CUDA
+#-------------------------------------------------------------------------------
+if (BUILD_CUDA)
+  include(CheckLanguage)
+  check_language(CUDA)
+  if (NOT CMAKE_CUDA_COMPILER)
+    message(FATAL_ERROR "BUILD_CUDA is ON but no CUDA compiler (nvcc) was found. "
+                        "Install the CUDA Toolkit or configure with -DBUILD_CUDA=OFF.")
+  endif()
+
+  # Pick GPU architectures. Override with -DCMAKE_CUDA_ARCHITECTURES=86 etc.
+  if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
+      set(CMAKE_CUDA_ARCHITECTURES native)
+    else()
+      set(CMAKE_CUDA_ARCHITECTURES 75)
+    endif()
+  endif()
+
+  enable_language(CUDA)
+  find_package(CUDAToolkit REQUIRED)
+
+  set(CMAKE_CUDA_STANDARD 17)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+
+  # --expt-relaxed-constexpr : lets device code call constexpr host functions
+  #                            (e.g. std::numeric_limits<double>::infinity()).
+  # --extended-lambda        : allows __device__ lambdas.
+  set(PT_CUDA_FLAGS --expt-relaxed-constexpr --extended-lambda)
+  if (MSVC)
+    # Silence the same MSVC warnings CGL disables for host code.
+    list(APPEND PT_CUDA_FLAGS -Xcompiler=/wd4838,/wd4305,/wd4244,/wd4267)
+  endif()
+
+  if (BUILD_DEBUG)
+    list(APPEND PT_CUDA_FLAGS -G -lineinfo)
+  else()
+    list(APPEND PT_CUDA_FLAGS -lineinfo)
+  endif()
+endif()
+
+#-------------------------------------------------------------------------------
 # Set target
 #-------------------------------------------------------------------------------
+# .cu files can be added to these source lists directly when BUILD_CUDA is ON.
 set(APPLICATION_3_1_SOURCE
 
     # Scene Object & Structure
@@ -159,6 +203,18 @@ target_include_directories(pathtracer PUBLIC src)
 
 target_link_libraries(pt31 PUBLIC CGL)
 target_link_libraries(pathtracer PUBLIC pt31)
+
+if (BUILD_CUDA)
+  foreach(tgt pt31 pathtracer)
+    # Separable compilation lets __device__ functions be defined in one .cu
+    # file and called from another.
+    set_target_properties(${tgt} PROPERTIES
+      CUDA_SEPARABLE_COMPILATION ON
+      CUDA_RESOLVE_DEVICE_SYMBOLS ON)
+    target_compile_options(${tgt} PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:${PT_CUDA_FLAGS}>)
+  endforeach()
+  target_link_libraries(pt31 PUBLIC CUDA::cudart)
+endif()
 
 set(CGL_INCLUDE_DIRS CGL/include CGL/deps/glew/include CGL/deps/glfw/include ./src/imgui ./src/imgui/backends)
 

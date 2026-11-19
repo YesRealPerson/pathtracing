@@ -122,7 +122,7 @@ class Quaternion : public Vector4D {
    */
   Matrix4x4 matrix() const {
 
-	double m[16] = {
+	float m[16] = {
 	   w,  -z,  y, x,
 	   z,   w, -x, y,
 	  -y,   x,  w, z,
@@ -145,7 +145,7 @@ class Quaternion : public Vector4D {
    * represented by a unit quaternion.
    */
   Matrix4x4 rightMatrix() const {
-	double m[16] = {
+	float m[16] = {
 	  +w, -z,  y, -x,
 	  +z,  w, -x, -y,
 	  -y,  x,  w, -z,
@@ -171,7 +171,7 @@ class Quaternion : public Vector4D {
    * rotation if the quaternion is non-unit.
    */
   Matrix3x3 rotationMatrix() const {
-	double m[9] = {
+	float m[9] = {
 	  1-2*y*y-2*z*z, 2*x*y - 2*z*w, 2*x*z + 2*y*w,
 	  2*x*y + 2*z*w, 1-2*x*x-2*z*z, 2*y*z - 2*x*w,
 	  2*x*z - 2*y*w, 2*y*z + 2*x*w, 1-2*x*x-2*y*y
@@ -326,7 +326,7 @@ class Quaternion : public Vector4D {
 	Vector3D axis_xy = cross(ztt, zbt);
 	double axis_norm = axis_xy.norm();
 
-	double axis_theta = acos(clamp(zbt.z, -1.0, 1.0));
+	double axis_theta = acos(clamp(zbt.z, -1.0f, 1.0f));
 	if (axis_norm > 0.00001)
 	{
 	  axis_xy = axis_xy * (axis_theta/axis_norm); // limit is *1
@@ -351,7 +351,7 @@ class Quaternion : public Vector4D {
     double omega = acos(clamp(q0.x*q1.x +
                               q0.y*q1.y +
                               q0.z*q1.z +
-                              q0.w*q1.w, -1.0, 1.0));
+                              q0.w*q1.w, -1.0f, 1.0f));
     if (fabs(omega) < 1e-10)
 	{
       omega = 1e-10;

@@ -22,7 +22,7 @@ struct Intersection {
 
   Intersection() : t (INF_D), primitive(NULL), bsdf(NULL) { }
 
-  double t;    ///< time of intersection
+  float t;    ///< time of intersection
 
   const Primitive* primitive;  ///< the primitive intersected
 

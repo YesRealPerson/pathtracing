@@ -1,6 +1,7 @@
 #ifndef CGL_H
 #define CGL_H
 
+#include "cuda_compat.h"
 #include "misc.h"
 
 // CGL Forward Declarations //
