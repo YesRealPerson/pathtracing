@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <stack>
+#include <algorithm>
 
 using namespace std;
 
@@ -60,17 +61,59 @@ BVHNode *BVHAccel::construct_bvh(std::vector<Primitive *>::iterator start,
 
 
   BBox bbox;
-
+  int primcount = 0;
   for (auto p = start; p != end; p++) {
     BBox bb = (*p)->get_bbox();
     bbox.expand(bb);
+    primcount++;
   }
 
-  BVHNode *node = new BVHNode(bbox);
-  node->start = start;
-  node->end = end;
+  if(primcount <= max_leaf_size) {
+    BVHNode *node = new BVHNode(bbox);
+    node->start = start;
+    node->end = end;
 
+    return node;
+  }
+  BBox cbox;
+  for (auto p = start; p != end; p++) {
+    cbox.expand((*p)->get_bbox().centroid());
+  }
+  float e[3] = {cbox.extent.x, cbox.extent.y, cbox.extent.z};
+  int axis = std::max_element(e, e + 3) - e;
+  float split = (cbox.min[axis] + cbox.max[axis]) / 2;
+
+  //define a left and right vector of primitives
+  std::vector<Primitive*> left, right;
+  //after defining a split point I sort the primatives into these 2 vectors
+  for (auto p = start; p != end; p++) {
+
+    if ((*p)->get_bbox().centroid()[axis] < split) {
+      left.push_back(*p);
+    } else {
+      right.push_back(*p);
+    }
+  }
+  // then recursively call construct_bvh
+
+  BVHNode *node = new BVHNode(bbox);
+  if (left.empty() || right.empty()) {
+    left.assign(start, end);
+    std::sort(left.begin(), left.end(), [&](Primitive *a, Primitive *b) {
+      return a->get_bbox().centroid()[axis] < b->get_bbox().centroid()[axis];
+    });
+    right.assign(left.begin() + left.size() / 2, left.end());
+    left.resize(left.size() / 2);
+  }
+  auto temp = std::copy(left.begin(), left.end(), start);
+  std::copy(right.begin(), right.end(), temp);
+  auto mid = start + left.size();
+  node->l = construct_bvh(start, mid, max_leaf_size);
+  node->r = construct_bvh(mid, end, max_leaf_size);
   return node;
+
+
+
 
 
 }
@@ -82,16 +125,24 @@ bool BVHAccel::has_intersection(const Ray &ray, BVHNode *node) const {
   // Intersection version cannot, since it returns as soon as it finds
   // a hit, it doesn't actually have to find the closest hit.
 
-
-
-  for (auto p : primitives) {
-    total_isects++;
-    if (p->has_intersection(ray))
-      return true;
+  float tmin = ray.min_t;
+  float tmax = ray.max_t;
+  if (!node->bb.intersect(ray, tmin, tmax)) {
+    return false;
   }
-  return false;
+  if (node->isLeaf()) {
 
+    for (auto p = node->start; p != node->end; p++) {
+      total_isects++;
+      if((*p)->has_intersection(ray)) {
 
+        return true;
+      }
+
+    }
+    return false;
+  }
+  return has_intersection(ray, node->l) || has_intersection(ray, node->r);
 }
 
 bool BVHAccel::intersect(const Ray &ray, Intersection *i, BVHNode *node) const {
@@ -99,15 +150,27 @@ bool BVHAccel::intersect(const Ray &ray, Intersection *i, BVHNode *node) const {
   // Fill in the intersect function.
 
 
-
-  bool hit = false;
-  for (auto p : primitives) {
-    total_isects++;
-    hit = p->intersect(ray, i) || hit;
+  float tmin = ray.min_t;
+  floate tmax = ray.max_t;
+  if (!node->bb.intersect(ray, tmin, tmax)) {
+    return false;
   }
-  return hit;
+  bool does_intr = false;
+  if (node->isLeaf()) {
 
+    for (auto p = node->start; p != node->end; p++) {
+      total_isects++;
+      if((*p)->intersect(ray,i)) {
+        
+        does_intr = true;
+      }
 
+    }
+    return does_intr;
+  }
+  bool l = intersect(ray, i,node->l) ;
+  bool r = intersect(ray,i, node->r);
+  return  l || r;
 }
 
 } // namespace SceneObjects
