@@ -49,7 +49,7 @@ namespace CGL
     float parallel = dot(S1, E1);
     if (fabsf(parallel) < epsilon)
       return false;
-    float det = 1.0 / parallel;
+    float det = 1.0f / parallel;
     float t = dot(S2, E2) * det;
     if (t < r.min_t || t > r.max_t)
       return false;

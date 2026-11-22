@@ -3,6 +3,65 @@
 Notepad of useful commands because lol
 ./build/pathtracer.exe -r 800 600 ./dae/sky/CBempty.dae
 
+## Acknowledgements
+Claude was used for a lot of debugging, and pointing out design flaws when it saw them while debugging 💀.
+
+## Important files
+### gpu_scene
+GPU versions for the following
+1. Primitives
+2. BVH Nodes
+3. Camera
+    - Introduces a to_gpu method for Camera to make GPUCamera structs.
+4. Scenes
+
+Regarding GPU scenes the GPUScene struct consolidates GPU primitives and GPU BVH nodes.
+
+*(See the upload function)*
+
+GPU kernels refer to this struct via a GPUSceneView which holds pointers to key information regarding the scene such as the list of primitives and the list of bvh nodes.
+
+See the comment starting on line 67 for more information as to why we pass in a view rather than just the struct itself.
+### gpu_render
+Currently entirely AI just to get a visual output, sorry. We'll circle back to this later.
+
+### gpu_intersect
+GPU versions for the following
+1. Ray
+2. Intersect
+3. intersect_triangle
+4. intersect_sphere TODO
+5. intersect_bbox TODO
+6. intersect_scene TODO (claude dumb version for now, the GPU unironically just brute forces this shit though)
+
+## Important Changes
+1. Replaced CPU rendering code for GPU code (see changes to application.cpp and raytraced_renderer.cpp, namely set_up_pathtracer, raytrace_gpu, and start_raytracing)
+2. Added createGPU functions for all primitives, see comment in gpu_scene.h:19 
+    - Notably BVHAccelerator is a Primitive subclass which has a degenerate createGPU function
+        - Bandaid but who cares
+
+## Main TODOs
+1. Construct proper BVH and BVH walking
+2. Sphere intersection
+3. BSDF f and sample_f
+    - Add GPU version of BSDFs to gpu_scene
+        - Forget the old idea of just doing it on host as a first step waste of time.
+    - Add GPU versions of f, sample_f, and is_delta (probably into something like gpu_bsdf.cuh, analogous to gpu_intersect.cuh)
+        - Requires GPU version of CosineWeightedHemisphereSampler3D
+        - Right now only care about EmissionBSDF and Diffuse BSDF
+        - Technically sample_f not needed until GI
+4. Direct lighting
+    - Zero bounce - L_out = emission
+    - One bounce
+        - Add GPU version of lights (see light.cpp)
+        - Add GPU version of is_delta_light and sample_L
+            - Requires UniformHemisphereSampler3D, UniformGridSampler2D
+    - Rewrite gpu_render
+5. Global Illumination
+    - IDK For now
+
+# CLAUDE README STUFF (not human written)
+
 ## Leftover Claude code
 
 | Location | Marker | What it is |
@@ -34,7 +93,6 @@ Not yet on the GPU: BSDFs (`host_bsdfs` is host-only), lights / `envLight` (miss
 
 ## Minor issues (not blocking)
 
-- `intersect_triangle`: `1.0 / parallel` is a double literal, so it does a double-precision divide on the GPU. Use `1.0f`.
 - `intersect_triangle`: a NaN `t` passes `t < min_t || t > max_t`. `if (!(t >= r.min_t && t <= r.max_t))` rejects it.
 - `GPUScene::free()` prints "cudaFree failed" at program exit once the CUDA runtime has shut down (`cudaErrorCudartUnloading`). Harmless.
 - Every `R` press calls `get_static_scene()` (new allocation) and re-uploads to the GPU. The static-scene leak is from the starter code.

@@ -296,7 +296,7 @@ void RaytracedRenderer::start_raytracing() {
 void RaytracedRenderer::raytrace_gpu() {
   size_t w = frameBuffer.w, h = frameBuffer.h;
 
-  fprintf(stdout, "[PathTracer] Rendering on GPU... "); fflush(stdout);
+  fprintf(stdout, "[PathTracer] Rendering on GPU...\n"); fflush(stdout);
   Timer timer;
   timer.start();
 
@@ -307,7 +307,8 @@ void RaytracedRenderer::raytrace_gpu() {
   pt->write_to_framebuffer(frameBuffer, 0, 0, w, h);
 
   timer.stop();
-  fprintf(stdout, "done! (%.4fs)\n", timer.duration());
+  // TODO: Add metric for how many rays we throw
+  fprintf(stdout, "[PathTracer] Done! (%.4fs)\n", timer.duration()); fflush(stdout);
 
   state = DONE;
   cv_done.notify_one();

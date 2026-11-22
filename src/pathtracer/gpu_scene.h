@@ -59,6 +59,7 @@ struct GPUScene {
   size_t num_nodes = 0;
 
   // For now evaluate BSDF on host after intersection
+  // I lied this idea sucks
   std::vector<BSDF*> host_bsdfs;
 
   GPUScene() = default;

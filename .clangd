@@ -1,0 +1,30 @@
+# clangd config: make CUDA sources parse as CUDA instead of failing on nvcc-only flags.
+# Applies only to .cu / .cuh files; C++ files keep using build/compile_commands.json unchanged.
+If:
+  PathMatch: .*\.cuh?$
+CompileFlags:
+  # Drop nvcc-only flags (clang does not understand them).
+  Remove:
+    - "-forward-unknown-to-host-compiler"
+    - "-Xcompiler*"
+    - "-arch*"
+    - "-rdc*"
+    - "-lineinfo"
+    - "--expt-relaxed-constexpr"
+    - "--extended-lambda"
+    - "-x"
+    - "cu"
+    - "-c"
+    - "-o"
+    - "-FdCMakeFiles*"
+  # Tell clang to parse as CUDA using the installed toolkit's headers.
+  Add:
+    - "-xcuda"
+    - "--cuda-path=C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0"
+    - "--cuda-gpu-arch=sm_75"
+    - "-std=c++17"
+    - "-Wno-unknown-cuda-version"
+    - "-D__CUDACC__"
+Diagnostics:
+  Suppress:
+    - "unknown_cuda_version"
