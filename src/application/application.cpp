@@ -635,7 +635,7 @@ void Application::set_up_pathtracer() {
   if (this->mode != EDIT_MODE) return;
   this->renderer->set_camera(&this->camera);
   SceneObjects::Scene* static_scene = this->scene->get_static_scene();
-  this->Zrenderer->set_scene(static_scene);
+  this->renderer->set_scene(static_scene);
   // Sets gpu_scene struct values
   // Uploads to GPU
   this->gpu_scene.upload(static_scene);
