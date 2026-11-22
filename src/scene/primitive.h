@@ -3,6 +3,7 @@
 
 #include "pathtracer/intersection.h"
 #include "scene/bbox.h"
+#include "pathtracer/gpu_scene.h"
 
 namespace CGL { namespace SceneObjects {
 
@@ -14,6 +15,8 @@ namespace CGL { namespace SceneObjects {
 class Primitive {
  public:
 
+  // Default constructor
+  virtual ~Primitive() = default;
   /**
    * Get the world space bounding box of the primitive.
    * \return world space bounding box of the primitive
@@ -61,6 +64,8 @@ class Primitive {
    * \param c desired highlight color
    */
   virtual void drawOutline(const Color& c, float alpha) const = 0;
+
+  virtual void createGPU(GPUPrimitive_t* prim) const = 0;
 
 };
 

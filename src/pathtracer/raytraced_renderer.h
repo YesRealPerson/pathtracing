@@ -30,6 +30,7 @@ using CGL::SceneObjects::BVHNode;
 using CGL::SceneObjects::BVHAccel;
 
 #include "pathtracer.h"
+#include "pathtracer/gpu_scene.h"
 
 namespace CGL {
 
@@ -98,6 +99,12 @@ public:
    * \param camera the camera to use in rendering
    */
   void set_camera(Camera* camera);
+
+  /**
+   * Scene data already uploaded to the GPU. Does NOT take ownership.
+   * start_raytracing renders from this (GPU-only).
+   */
+  void set_gpu_scene(const GPUScene* gs) { gpu_scene = gs; }
 
   /**
    * Sets the pathtracer's frame size. If in a running state (VISUALIZE,
@@ -169,6 +176,11 @@ public:
   bool has_valid_configuration();
 
   /**
+   * Render the full frame on the GPU (synchronously) and transition to DONE.
+   */
+  void raytrace_gpu();
+
+  /**
    * Build acceleration structures.
    */
   void build_accel();
@@ -206,6 +218,9 @@ public:
   State state;          ///< current state
   Scene* scene;         ///< current scene
   Camera* camera;       ///< current camera
+
+  // GPU //
+  const GPUScene* gpu_scene = nullptr; ///< not owned
 
   // Integration state //
 

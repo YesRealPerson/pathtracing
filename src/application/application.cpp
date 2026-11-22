@@ -632,9 +632,19 @@ void Application::to_edit_mode() {
 }
 
 void Application::set_up_pathtracer() {
-  if (mode != EDIT_MODE) return;
-  renderer->set_camera(&camera);
-  renderer->set_scene(scene->get_static_scene());
+  if (this->mode != EDIT_MODE) return;
+  this->renderer->set_camera(&this->camera);
+  SceneObjects::Scene* static_scene = this->scene->get_static_scene();
+  this->Zrenderer->set_scene(static_scene);
+  // Sets gpu_scene struct values
+  // Uploads to GPU
+  this->gpu_scene.upload(static_scene);
+  // Just enough to get a render going
+  // BVH that is quite literally just every primitive as a leaf node
+  // TODO: Make proper BVH!
+  this->gpu_scene.upload_dummy_bvh();
+  this->renderer->set_gpu_scene(&this->gpu_scene);
+  
   renderer->set_frame_size(screenW, screenH);
 
 }

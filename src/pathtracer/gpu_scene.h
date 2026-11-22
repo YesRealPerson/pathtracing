@@ -26,19 +26,57 @@ typedef struct GPUPrimitive {
   int bsdf_id; // index for BSDF list
 } GPUPrimitive_t;
 
-/**
- * Device-side copy of the scene geometry. Owns its device memory;
- * call free() (or let the destructor) release it.
- */
+// The root is always node 0.
+// Flat BVH node
+typedef struct GPUBVHNode {
+  Vector3D bb_min, bb_max;
+  int left, right; // Index of left and right child
+  int start, count; // Start index and number of primitives inside node
+  // count is only nonzero for leaves, leaves naturally will not have children
+} GPUBVHNode_t;
+
+// Camera information to generate new rays
+typedef struct GPUCamera {
+  Vector3D pos;
+  Vector3D c2w0, c2w1, c2w2;   // columns of the camera-to-world rotation
+  float tan_half_hfov, tan_half_vfov;
+  float nclip, fclip;
+} GPUCamera_t;
+
+// Pointers/information needed for GPU kernels
+typedef struct GPUSceneView {
+  const GPUPrimitive* primitives;
+  const GPUBVHNode*   nodes;
+  int num_primitives;
+  int num_nodes;
+} GPUSceneView_t;
+
 struct GPUScene {
-  GPUPrimitive* primitives = nullptr;  ///< device pointer
+  GPUPrimitive* primitives = nullptr;
   size_t num_primitives = 0;
+
+  GPUBVHNode* nodes = nullptr;
+  size_t num_nodes = 0;
 
   // For now evaluate BSDF on host after intersection
   std::vector<BSDF*> host_bsdfs;
 
   GPUScene() = default;
   ~GPUScene() { free(); }
+  // Unironically useful information
+  // Copy constructor
+  // GPUScene stores a lot of pointers into GPU memory
+  // When we call free or destructor we free GPU memory
+  // Then copy pointers become stale
+  
+  // Removing the copy constructor makes copies into compile errors
+  // Such as pass by value pushing to a vector
+
+  // If we were to pass the GPU scene into the kernel it would copy it
+  // Then upon launching the kernel we copy the value passed and send it to GPU
+  // So as soon as this is done we call ~GPUScene on the copy 
+  // which in current implmentation frees GPU memory
+  // Hence why we have the view struct
   GPUScene(const GPUScene&) = delete;
   GPUScene& operator=(const GPUScene&) = delete;
 
@@ -47,6 +85,16 @@ struct GPUScene {
 
   /// Convenience: collect every primitive in `scene` and upload.
   void upload(const SceneObjects::Scene* scene);
+
+  /* CLAUDE CODE TO BE DELETED */
+  // Upload a single-leaf BVH covering every primitive (brute force).
+  // Call after upload(). Swap for a real flattened BVH later.
+  void upload_dummy_bvh();
+  /* END CLAUDE CODE TO BE DELETED */
+
+  GPUSceneView view() const {
+    return { primitives, nodes, (int)num_primitives, (int)num_nodes };
+  }
 
   void free();
 };

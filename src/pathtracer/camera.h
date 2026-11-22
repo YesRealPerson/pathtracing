@@ -8,6 +8,7 @@
 
 #include "math.h"
 #include "ray.h"
+#include "gpu_scene.h"
 
 
 namespace CGL {
@@ -89,6 +90,11 @@ class Camera {
   Ray generate_ray(double x, double y) const;
 
   Ray generate_ray_for_thin_lens(double x, double y, double rndR, double rndTheta) const;
+  /* UNREVIEWED CLAUDE CODE TO BE DELETED */
+
+  /// Snapshot of the pinhole parameters for GPU ray generation.
+  GPUCamera to_gpu() const;
+  /* END UNREVIEWED CLAUDE CODE */
 
   // Lens aperture and focal distance for depth of field effects.
   double lensRadius;

@@ -1,4 +1,5 @@
 #include "raytraced_renderer.h"
+#include "gpu_render.h"
 #include "bsdf.h"
 #include "pathtracer/ray.h"
 
@@ -224,12 +225,8 @@ void RaytracedRenderer::stop() {
       state = READY;
       break;
     case RENDERING:
-      continueRaytracing = false;
     case DONE:
-      for (int i=0; i<numWorkerThreads; i++) {
-            workerThreads[i]->join();
-            delete workerThreads[i];
-        }
+      // No more CPU rendering, no threads to join on
       state = READY;
       break;
   }
@@ -285,47 +282,35 @@ void RaytracedRenderer::start_raytracing() {
   pt->camera = camera;
   pt->scene = scene;
 
-  if (!render_cell) {
-    frameBuffer.clear();
-    num_tiles_w = width / imageTileSize + 1;
-    num_tiles_h = height / imageTileSize + 1;
-    tilesTotal = num_tiles_w * num_tiles_h;
-    tilesDone = 0;
-    tile_samples.resize(num_tiles_w * num_tiles_h);
-    memset(&tile_samples[0], 0, num_tiles_w * num_tiles_h * sizeof(int));
-
-    // populate the tile work queue
-    for (size_t y = 0; y < height; y += imageTileSize) {
-        for (size_t x = 0; x < width; x += imageTileSize) {
-            workQueue.put_work(WorkItem(x, y, imageTileSize, imageTileSize));
-        }
-    }
-  } else {
-    int w = (cell_br-cell_tl).x;
-    int h = (cell_br-cell_tl).y;
-    int imTS = imageTileSize / 4;
-    num_tiles_w = w / imTS + 1;
-    num_tiles_h = h / imTS + 1;
-    tilesTotal = num_tiles_w * num_tiles_h;
-    tilesDone = 0;
-    tile_samples.resize(num_tiles_w * num_tiles_h);
-    memset(&tile_samples[0], 0, num_tiles_w * num_tiles_h * sizeof(int));
-
-    // populate the tile work queue
-    for (size_t y = cell_tl.y; y < cell_br.y; y += imTS) {
-      for (size_t x = cell_tl.x; x < cell_br.x; x += imTS) {
-        workQueue.put_work(WorkItem(x, y, 
-          min(imTS, (int)(cell_br.x-x)), min(imTS, (int)(cell_br.y-y)) ));
-      }
-    }
+  // If there is no GPU scene or there is nothing in the BVH
+  if (!gpu_scene || gpu_scene->num_nodes == 0) {
+    fprintf(stderr, "[PathTracer] No GPU scene uploaded; nothing to render.\n");
+    state = DONE;
+    // Notifies render to file to print result
+    cv_done.notify_one();
+    return;
   }
+  raytrace_gpu();
+}
 
-  bvh->total_isects = 0; bvh->total_rays = 0;
-  // launch threads
-  fprintf(stdout, "[PathTracer] Rendering... "); fflush(stdout);
-  for (int i=0; i<numWorkerThreads; i++) {
-      workerThreads[i] = new std::thread(&RaytracedRenderer::worker_thread, this);
-  }
+void RaytracedRenderer::raytrace_gpu() {
+  size_t w = frameBuffer.w, h = frameBuffer.h;
+
+  fprintf(stdout, "[PathTracer] Rendering on GPU... "); fflush(stdout);
+  Timer timer;
+  timer.start();
+
+  frameBuffer.clear();
+  // TODO: UPDATE GPU RENDERING FUNCTION
+  gpu_render_normals(gpu_scene->view(), camera->to_gpu(),
+                     pt->sampleBuffer.data.data(), (int)w, (int)h);
+  pt->write_to_framebuffer(frameBuffer, 0, 0, w, h);
+
+  timer.stop();
+  fprintf(stdout, "done! (%.4fs)\n", timer.duration());
+
+  state = DONE;
+  cv_done.notify_one();
 }
 
 void RaytracedRenderer::render_to_file(string filename, size_t x, size_t y, size_t dx, size_t dy) {
@@ -589,7 +574,7 @@ void RaytracedRenderer::key_press(int key) {
   }
 }
 
-/**
+/** DEPRECIATED
  * Raytrace a tile of the scene and update the frame buffer. Is run
  * in a worker thread.
  */
@@ -652,6 +637,7 @@ void RaytracedRenderer::autofocus(Vector2D loc) {
   pt->autofocus(loc);
 }
 
+// DEPRECIATED
 void RaytracedRenderer::worker_thread() {
 
   Timer timer;

@@ -184,9 +184,20 @@ void Camera::load_settings(string filename) {
   cout << "[Camera] Loaded settings from " << filename << endl;
 }
 
-/**
- * This function generates a ray from camera perspective, passing through camera / sensor plane (x,y)
- */
+// Copies information required for GPUCamera to generate new rays.
+GPUCamera Camera::to_gpu() const {
+  GPUCamera g;
+  g.pos = pos;
+  g.c2w0 = c2w[0];
+  g.c2w1 = c2w[1];
+  g.c2w2 = c2w[2];
+  g.tan_half_hfov = (float)tan(0.5 * hFov * PI / 180);
+  g.tan_half_vfov = (float)tan(0.5 * vFov * PI / 180);
+  g.nclip = (float)nClip;
+  g.fclip = (float)fClip;
+  return g;
+}
+
 Ray Camera::generate_ray(double x, double y) const {
 
   // TODO (Part 1.1):

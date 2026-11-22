@@ -111,11 +111,6 @@ BVHNode *BVHAccel::construct_bvh(std::vector<Primitive *>::iterator start,
   node->l = construct_bvh(start, mid, max_leaf_size);
   node->r = construct_bvh(mid, end, max_leaf_size);
   return node;
-
-
-
-
-
 }
 
 bool BVHAccel::has_intersection(const Ray &ray, BVHNode *node) const {
@@ -124,25 +119,8 @@ bool BVHAccel::has_intersection(const Ray &ray, BVHNode *node) const {
   // Take note that this function has a short-circuit that the
   // Intersection version cannot, since it returns as soon as it finds
   // a hit, it doesn't actually have to find the closest hit.
-
-  float tmin = ray.min_t;
-  float tmax = ray.max_t;
-  if (!node->bb.intersect(ray, tmin, tmax)) {
-    return false;
-  }
-  if (node->isLeaf()) {
-
-    for (auto p = node->start; p != node->end; p++) {
-      total_isects++;
-      if((*p)->has_intersection(ray)) {
-
-        return true;
-      }
-
-    }
-    return false;
-  }
-  return has_intersection(ray, node->l) || has_intersection(ray, node->r);
+  Intersection i;
+  return this->intersect(ray, &i, node);
 }
 
 bool BVHAccel::intersect(const Ray &ray, Intersection *i, BVHNode *node) const {
@@ -151,7 +129,7 @@ bool BVHAccel::intersect(const Ray &ray, Intersection *i, BVHNode *node) const {
 
 
   float tmin = ray.min_t;
-  floate tmax = ray.max_t;
+  float tmax = ray.max_t;
   if (!node->bb.intersect(ray, tmin, tmax)) {
     return false;
   }

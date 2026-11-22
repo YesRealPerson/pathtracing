@@ -33,6 +33,7 @@
 
 // Shared modules
 #include "pathtracer/camera.h"
+#include "pathtracer/gpu_scene.h"
 
 using namespace std;
 
@@ -133,7 +134,8 @@ private:
   void set_up_pathtracer();
 
   GLScene::Scene *scene;
-  OfflineRenderer* renderer;
+  RaytracedRenderer* renderer;
+  GPUScene gpu_scene; // data to be copied to GPU
 
   // View Frustrum Variables.
   // On resize, the aspect ratio is changed. On reset_camera, the position and
