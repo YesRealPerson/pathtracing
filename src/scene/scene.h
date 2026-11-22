@@ -38,6 +38,12 @@ class SceneLight {
                             double* distToLight, double* pdf) const = 0;
   virtual bool is_delta_light() const = 0;
 
+  /**
+   * Convert to GPU equivalent. Point, Directional, Area, and
+   * InfiniteHemisphere are supported; everything else sets GPU_LIGHT_UNKNOWN.
+   */
+  virtual void createGPU(GPULight_t* light) const = 0;
+
 };
 
 

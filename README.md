@@ -4,7 +4,7 @@ Notepad of useful commands because lol
 ./build/pathtracer.exe -r 800 600 ./dae/sky/CBempty.dae
 
 ## Acknowledgements
-Claude was used for a lot of debugging, and pointing out design flaws when it saw them while debugging 💀.
+Claude was used for a lot of debugging, and pointing out design flaws when it saw them while debugging 💀. Also it made the CMake file because I don't know how to do that.
 
 ## Important files
 ### gpu_scene
@@ -43,21 +43,7 @@ GPU versions for the following
 ## Main TODOs
 1. Construct proper BVH and BVH walking
 2. Sphere intersection
-3. BSDF f and sample_f
-    - Add GPU version of BSDFs to gpu_scene
-        - Forget the old idea of just doing it on host as a first step waste of time.
-    - Add GPU versions of f, sample_f, and is_delta (probably into something like gpu_bsdf.cuh, analogous to gpu_intersect.cuh)
-        - Requires GPU version of CosineWeightedHemisphereSampler3D
-        - Right now only care about EmissionBSDF and Diffuse BSDF
-        - Technically sample_f not needed until GI
-4. Direct lighting
-    - Zero bounce - L_out = emission
-    - One bounce
-        - Add GPU version of lights (see light.cpp)
-        - Add GPU version of is_delta_light and sample_L
-            - Requires UniformHemisphereSampler3D, UniformGridSampler2D
-    - Rewrite gpu_render
-5. Global Illumination
+3. Global Illumination
     - IDK For now
 
 # CLAUDE README STUFF (not human written)

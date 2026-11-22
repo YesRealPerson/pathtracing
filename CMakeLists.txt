@@ -66,9 +66,7 @@ set(APPLICATION_3_1_SOURCE
     src/pathtracer/bsdf.cpp
     src/pathtracer/pathtracer.cpp
     src/pathtracer/gpu_scene.cu
-    # UNREVIEWED CLAUDE CODE TO BE DELETED
     src/pathtracer/gpu_render.cu
-    # END UNREVIEWED CLAUDE CODE
 
     # Imgui
     src/imgui/imgui.cpp

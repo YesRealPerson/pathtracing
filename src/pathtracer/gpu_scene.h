@@ -43,12 +43,55 @@ typedef struct GPUCamera {
   float nclip, fclip;
 } GPUCamera_t;
 
+// Emission & Diffuse only for now, and maybe forever
+typedef enum BSDFType{
+  EMISSIVE,
+  DIFFUSE
+} BSDFType_t;
+
+
+// Only takes CosineWeightedHemisphereSampler3D
+typedef struct GPUBSDF {
+  BSDFType_t type;
+  Vector3D reflectance, radiance;
+} GPUBSDF_t;
+
+typedef enum GPULightType {
+  GPU_LIGHT_POINT       = 0,
+  GPU_LIGHT_DIRECTIONAL = 1,
+  GPU_LIGHT_AREA        = 2,
+  GPU_LIGHT_HEMISPHERE  = 3, // ambient (InfiniteHemisphereLight)
+  GPU_LIGHT_UNKNOWN     = 4, // spot, sphere, mesh, environment: skip on GPU
+} GPULightType_t;
+
+typedef struct GPULight {
+  GPULightType_t type;
+  Vector3D radiance;
+  Vector3D position;     // point, area
+  Vector3D direction;    // directional: direction TO light; area: light normal
+                         // hemisphere: hemisphere axis (sampleToWorld col 2)
+  Vector3D dim_x, dim_y; // area: light extents
+                         // hemisphere: sampleToWorld cols 0, 1
+                         // so wi = s.x*dim_x + s.y*dim_y + s.z*direction
+  float area;            // area
+} GPULight_t;
+
 // Pointers/information needed for GPU kernels
 typedef struct GPUSceneView {
   const GPUPrimitive* primitives;
   const GPUBVHNode*   nodes;
+  const GPUBSDF*      bsdfs; // indexed by GPUPrimitive::bsdf_id
+  const GPULight*     lights;
   int num_primitives;
   int num_nodes;
+  int num_bsdfs;
+  int num_lights;
+
+  // Render settings
+  int ns_aa;          // camera rays per pixel
+  int max_ray_depth;  // maximum ray depth
+  int ns_area_light;  // samples per area light
+  int samples_per_batch; // samples between adaptive sampling convergence checks
 } GPUSceneView_t;
 
 struct GPUScene {
@@ -58,9 +101,16 @@ struct GPUScene {
   GPUBVHNode* nodes = nullptr;
   size_t num_nodes = 0;
 
-  // For now evaluate BSDF on host after intersection
-  // I lied this idea sucks
-  std::vector<BSDF*> host_bsdfs;
+  size_t ns_aa = 1;          // camera rays per pixel
+  size_t max_ray_depth = 1;  // maximum ray depth
+  size_t ns_area_light = 1;  // samples per area light
+  size_t samples_per_batch = 32; // samples between adaptive sampling convergence checks
+
+  GPUBSDF* bsdfs = nullptr; // indexed by GPUPrimitive::bsdf_id
+  size_t num_bsdfs = 0;
+
+  GPULight* lights = nullptr;
+  size_t num_lights = 0;
 
   GPUScene() = default;
   ~GPUScene() { free(); }
@@ -94,7 +144,10 @@ struct GPUScene {
   /* END CLAUDE CODE TO BE DELETED */
 
   GPUSceneView view() const {
-    return { primitives, nodes, (int)num_primitives, (int)num_nodes };
+    return { primitives, nodes, bsdfs, lights,
+             (int)num_primitives, (int)num_nodes, (int)num_bsdfs, (int)num_lights,
+             (int)ns_aa, (int)max_ray_depth, (int)ns_area_light,
+             (int)samples_per_batch };
   }
 
   void free();

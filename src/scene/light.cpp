@@ -22,6 +22,13 @@ Vector3D DirectionalLight::sample_L(const Vector3D p, Vector3D* wi,
   return radiance;
 }
 
+void DirectionalLight::createGPU(GPULight_t* light) const {
+  *light = GPULight_t{};
+  light->type = GPU_LIGHT_DIRECTIONAL;
+  light->radiance = this->radiance;
+  light->direction = this->dirToLight;
+}
+
 // Infinite Hemisphere Light //
 
 InfiniteHemisphereLight::InfiniteHemisphereLight(const Vector3D rad)
@@ -41,6 +48,15 @@ Vector3D InfiniteHemisphereLight::sample_L(const Vector3D p, Vector3D* wi,
   return radiance;
 }
 
+void InfiniteHemisphereLight::createGPU(GPULight_t* light) const {
+  *light = GPULight_t{};
+  light->type = GPU_LIGHT_HEMISPHERE;
+  light->radiance = this->radiance;
+  light->dim_x = this->sampleToWorld[0];
+  light->dim_y = this->sampleToWorld[1];
+  light->direction = this->sampleToWorld[2];
+}
+
 // Point Light //
 
 PointLight::PointLight(const Vector3D rad, const Vector3D pos) : 
@@ -56,6 +72,13 @@ Vector3D PointLight::sample_L(const Vector3D p, Vector3D* wi,
   return radiance;
 }
 
+void PointLight::createGPU(GPULight_t* light) const {
+  *light = GPULight_t{};
+  light->type = GPU_LIGHT_POINT;
+  light->radiance = this->radiance;
+  light->position = this->position;
+}
+
 
 // Spot Light //
 
@@ -67,6 +90,11 @@ SpotLight::SpotLight(const Vector3D rad, const Vector3D pos,
 Vector3D SpotLight::sample_L(const Vector3D p, Vector3D* wi,
                              double* distToLight, double* pdf) const {
   return Vector3D();
+}
+
+void SpotLight::createGPU(GPULight_t* light) const {
+  *light = GPULight_t{};
+  light->type = GPU_LIGHT_UNKNOWN;
 }
 
 
@@ -92,6 +120,17 @@ Vector3D AreaLight::sample_L(const Vector3D p, Vector3D* wi,
   return cosTheta < 0 ? radiance : Vector3D();
 };
 
+void AreaLight::createGPU(GPULight_t* light) const {
+  *light = GPULight_t{};
+  light->type = GPU_LIGHT_AREA;
+  light->radiance = this->radiance;
+  light->position = this->position;
+  light->direction = this->direction;
+  light->dim_x = this->dim_x;
+  light->dim_y = this->dim_y;
+  light->area = (float)this->area;
+}
+
 
 // Sphere Light //
 
@@ -105,6 +144,11 @@ Vector3D SphereLight::sample_L(const Vector3D p, Vector3D* wi,
   return Vector3D();
 }
 
+void SphereLight::createGPU(GPULight_t* light) const {
+  *light = GPULight_t{};
+  light->type = GPU_LIGHT_UNKNOWN;
+}
+
 // Mesh Light
 
 MeshLight::MeshLight(const Vector3D rad, const Mesh* mesh) {
@@ -114,6 +158,11 @@ MeshLight::MeshLight(const Vector3D rad, const Mesh* mesh) {
 Vector3D MeshLight::sample_L(const Vector3D p, Vector3D* wi, 
                              double* distToLight, double* pdf) const {
   return Vector3D();
+}
+
+void MeshLight::createGPU(GPULight_t* light) const {
+  *light = GPULight_t{};
+  light->type = GPU_LIGHT_UNKNOWN;
 }
 
 } // namespace SceneObjects

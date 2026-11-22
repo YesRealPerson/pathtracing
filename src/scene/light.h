@@ -19,6 +19,7 @@ class DirectionalLight : public SceneLight {
   Vector3D sample_L(const Vector3D p, Vector3D* wi, double* distToLight,
                     double* pdf) const;
   bool is_delta_light() const { return true; }
+  void createGPU(GPULight_t* light) const;
 
  private:
   Vector3D radiance;
@@ -34,6 +35,7 @@ class InfiniteHemisphereLight : public SceneLight {
   Vector3D sample_L(const Vector3D p, Vector3D* wi, double* distToLight,
                     double* pdf) const;
   bool is_delta_light() const { return false; }
+  void createGPU(GPULight_t* light) const;
 
   Vector3D radiance;
   Matrix3x3 sampleToWorld;
@@ -50,6 +52,7 @@ class PointLight : public SceneLight {
   Vector3D sample_L(const Vector3D p, Vector3D* wi, double* distToLight,
                     double* pdf) const;
   bool is_delta_light() const { return true; }
+  void createGPU(GPULight_t* light) const;
 
   Vector3D radiance;
   Vector3D position;
@@ -65,6 +68,7 @@ class SpotLight : public SceneLight {
   Vector3D sample_L(const Vector3D p, Vector3D* wi, double* distToLight,
                     double* pdf) const;
   bool is_delta_light() const { return true; }
+  void createGPU(GPULight_t* light) const;
 
   Vector3D radiance;
   Vector3D position;
@@ -83,6 +87,7 @@ class AreaLight : public SceneLight {
   Vector3D sample_L(const Vector3D p, Vector3D* wi, double* distToLight,
                     double* pdf) const;
   bool is_delta_light() const { return false; }
+  void createGPU(GPULight_t* light) const;
 
   Vector3D radiance;
   Vector3D position;
@@ -102,6 +107,7 @@ class SphereLight : public SceneLight {
   Vector3D sample_L(const Vector3D p, Vector3D* wi, double* distToLight,
                     double* pdf) const;
   bool is_delta_light() const { return false; }
+  void createGPU(GPULight_t* light) const;
 
   const SphereObject* sphere;
   Vector3D radiance;
@@ -117,6 +123,7 @@ class MeshLight : public SceneLight {
   Vector3D sample_L(const Vector3D p, Vector3D* wi, double* distToLight,
                     double* pdf) const;
   bool is_delta_light() const { return false; }
+  void createGPU(GPULight_t* light) const;
 
   const Mesh* mesh;
   Vector3D radiance;

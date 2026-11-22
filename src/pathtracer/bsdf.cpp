@@ -53,9 +53,9 @@ Vector3D DiffuseBSDF::f(const Vector3D wo, const Vector3D wi) {
   // TODO (Part 3.1):
   // This function takes in both wo and wi and returns the evaluation of
   // the BSDF for those two directions.
+    
 
-
-  return Vector3D(1.0);
+  return this->reflectance / PI;
 
 }
 
@@ -69,9 +69,8 @@ Vector3D DiffuseBSDF::sample_f(const Vector3D wo, Vector3D *wi, double *pdf) {
   // After sampling a value for wi, it returns the evaluation of the BSDF
   // at (wo, *wi).
   // You can use the `f` function. The reference solution only takes two lines.
-
-
-  return Vector3D(1.0);
+    *wi = this->sampler.get_sample(pdf);
+  return this->f(wo, *wi);
 
 }
 
@@ -82,6 +81,12 @@ void DiffuseBSDF::render_debugger_node()
     DragDouble3("Reflectance", &reflectance[0], 0.005);
     ImGui::TreePop();
   }
+}
+
+void DiffuseBSDF::createGPU(GPUBSDF_t* bsdf) const {
+  bsdf->type = DIFFUSE;
+  bsdf->reflectance = this->reflectance;
+  bsdf->radiance = Vector3D();
 }
 
 /**
@@ -107,6 +112,20 @@ void EmissionBSDF::render_debugger_node()
     DragDouble3("Radiance", &radiance[0], 0.005);
     ImGui::TreePop();
   }
+}
+
+void EmissionBSDF::createGPU(GPUBSDF_t* bsdf) const {
+  bsdf->type = EMISSIVE;
+  bsdf->reflectance = Vector3D();
+  bsdf->radiance = this->radiance;
+}
+
+// Unsupported BSDF on GPU: fall back to black diffuse
+void BSDF::createGPU(GPUBSDF_t* bsdf) const {
+  fprintf(stderr, "[GPUScene] Unsupported BSDF type on GPU; using black diffuse.\n");
+  bsdf->type = DIFFUSE;
+  bsdf->reflectance = Vector3D();
+  bsdf->radiance = Vector3D();
 }
 
 } // namespace CGL
