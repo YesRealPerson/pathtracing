@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CS184 Milestone Presentation</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        h1 {
+            text-align: center;
+        }
+
+        .container {
+            margin: 0 auto;
+            padding: 60px 20%;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .names {
+            text-align: center;
+        }
+
+        .data-table {
+            border-collapse: collapse;
+            text-align: center;
+            margin: 16px 0;
+        }
+
+        .data-table th,
+        .data-table td {
+            border: 1px solid #ccc;
+            padding: 8px 16px;
+        }
+
+        .data-table th {
+            background-color: #f2f2f2;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>CS184 Milestone Presentation</h1>
+
+        <h2>GPU-Accelerated Pathtracer</h2>
+        <p class="names">Stephen, Connor, Charlie, Abe</p>
+
+        <h2>Summary of Current Progress</h2>
+        <ul>
+            <li>Most features of the CPU path tracer adapted to CUDA to be run on the GPU
+                <ul>
+                    <li>Camera ray generation: one thread per pixel</li>
+                    <li>BVH construction and Ray-triangle intersection</li>
+                    <li>BSDF and light sampling</li>
+                    <li>Direct Lighting</li>
+                </ul>
+            </li>
+            <li>Made changes to the setup to be GPU optimal
+                <ul>
+                    <li>Flattening scene objects and moving entire scene from CPU to GPU alongside framebuffer
+                        <ul>
+                            <li>Primitives are plain structs with no pointers and BSDFs are uniquely copied and
+                                referenced via an id</li>
+                        </ul>
+                    </li>
+                    <li>Kept same algorithms as CPU implementations but replaced BVH traversal with iterative loop
+                        with a thread stack
+                        <ul>
+                            <li>No pointers in BVH, data for bbox, primitives, and nodes are indexed in arrays</li>
+                        </ul>
+                    </li>
+                </ul>
+            </li>
+        </ul>
+
+        <h2>Performance Comparisons</h2>
+        <p>On M4 Pro CPU and on an RTX 5090 at 32 samples per area light and 64 samples per pixel 1280x960</p>
+        <table class="data-table">
+            <tr>
+                <th>CPU vs GPU Time comp.</th>
+                <th>CPU</th>
+                <th>GPU</th>
+            </tr>
+            <tr>
+                <td>teapot (2,464 tri.)</td>
+                <td>4.10s</td>
+                <td>0.024s</td>
+            </tr>
+            <tr>
+                <td>Max Planck (50,801 tri.)</td>
+                <td>5.06s</td>
+                <td>0.074s</td>
+            </tr>
+            <tr>
+                <td>WALL-E (240,326 tri.)</td>
+                <td>19.97s</td>
+                <td>0.821s</td>
+            </tr>
+        </table>
+        <table class="data-table">
+            <tr>
+                <th>Many Triangles</th>
+                <th>GPU</th>
+                <th>Triangles</th>
+            </tr>
+            <tr>
+                <td>dragon</td>
+                <td>0.384s</td>
+                <td>105,120</td>
+            </tr>
+            <tr>
+                <td>blob</td>
+                <td>0.919s</td>
+                <td>196,608</td>
+            </tr>
+            <tr>
+                <td>WALL-E</td>
+                <td>0.821s</td>
+                <td>240,326</td>
+            </tr>
+        </table>
+        <p>We believe blob renders faster because fewer triangles are in view during the rendering process</p>
+
+        <h2>GPU Flattening Approach</h2>
+        <ul>
+            <li>Polymorphism is bad (for GPUs)!
+                <ul>
+                    <li>We want to be able to read everything related to a scene at once and be able to simply index across them</li>
+                    <li>The starter code uses a lot of polymorphism to have unique features i.e. intersect for spheres
+                        vs triangles</li>
+                </ul>
+            </li>
+            <li>Adapt shared features to single reusable struct</li>
+            <li>Use switch statements for child specific behavior (such as f for BSDFs or sample_L for lights)
+                <ul>
+                    <li>GPU equivalents for a couple sampling functions</li>
+                    <li>GPU intersection tests</li>
+                    <li>Generally painless copying and pasting from the CPU pathtracer</li>
+                </ul>
+            </li>
+        </ul>
+        <p>Example: Primitives (Triangles, Spheres)</p>
+        <ul>
+            <li>Use a type enum, and vectors for triangle points and normals.</li>
+            <li>Reuse same vectors to represent origin, radius and radius squared (we use x and y in the b vector).</li>
+        </ul>
+        <p>Most objects have a new toGPU function which per instance creates a GPU equivalent struct.</p>
+
+        <h2>BVH Construction + Intersection</h2>
+        <p>A BVH is built by having a vector of bboxes, nodes, and order(primitive indices)</p>
+        <ul>
+            <li>Index into these arrays is how a bvh is traversed instead of recursion</li>
+            <li>Uses the same midpoint of longest axis of centroid algorithm as our CPU implementation</li>
+            <li>Left and right are indexes into the nodes array of a node and root is at index 0</li>
+            <li>Leaves store a range of primitives</li>
+        </ul>
+        <p>When a GPU scene is uploaded, it builds a BVH which adds the primitives and a order vector which keeps track
+            of prims</p>
+        <p>Since each GPU thread has its own stack, we set a maximum stack size per GPU thread for BVH intersection</p>
+        <p>The algorithm is the same but the stack contains the indexes of the bvh nodes that we are checking for
+            intersections</p>
+
+        <h2>GPU Scenes</h2>
+        <p>In total we make GPU equivalents for the following</p>
+        <ul>
+            <li>Primitives, BVH Nodes, BSDFs, Lights, and Cameras</li>
+        </ul>
+        <p>We centralize these into a GPUScene struct</p>
+        <ul>
+            <li>(besides cameras, since there’s only one so we just pass it in at render time)</li>
+        </ul>
+        <p>Everything is then uploaded to the GPU using an upload function which mallocs enough space for every
+            primitive, BVH node, unique BSDF, and light.</p>
+        <p>We also have an equivalent free function.</p>
+        <p>Rendering is relatively painless once we’ve done all this setup!</p>
+        <p>All we effectively had to do was copy and paste our CPU rendering steps for zero and single bounce
+            (importance) lighting and replace all references to CPU structs!</p>
+
+        <h2>Next steps</h2>
+        <p>Finishing up the path tracer</p>
+        <ol>
+            <li>Global Illumination
+                <ol type="a">
+                    <li>Russian Roulette &amp; Adaptive Sampling included</li>
+                </ol>
+            </li>
+            <li>Camera movement during rendering</li>
+        </ol>
+        <p>Further speed improvements</p>
+        <ol start="3">
+            <li>Implement ReSTIR</li>
+            <li>Intel OIDN</li>
+            <li>ReSTIR GI</li>
+        </ol>
+    </div>
+</body>
+
+</html>
