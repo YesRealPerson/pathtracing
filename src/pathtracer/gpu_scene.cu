@@ -167,13 +167,13 @@ namespace CGL
     this->num_nodes = nodes.size();
 
     
-    CUDA_CALL(cudaMalloc(&this->primitives, sizeof(GPUPrimitive_t)*GPUprims.size()))
-    CUDA_CALL(cudaMemcpy(this->primitives, GPUprims.data(), sizeof(GPUPrimitive_t)*GPUprims.size(), cudaMemcpyHostToDevice))
+    CUDA_CALL(cudaMalloc(&this->primitives, sizeof(GPUPrimitive_t) * GPUprims.size()));
+    CUDA_CALL(cudaMemcpy(this->primitives, GPUprims.data(), sizeof(GPUPrimitive_t) * GPUprims.size(), cudaMemcpyHostToDevice));
     
     this->num_primitives = GPUprims.size();
 
-    CUDA_CALL(cudaMalloc(&this->bsdfs, sizeof(GPUBSDF_t)*GPUbsdfs.size()))
-    CUDA_CALL(cudaMemcpy(this->bsdfs, GPUbsdfs.data(), sizeof(GPUBSDF_t)*GPUbsdfs.size(), cudaMemcpyHostToDevice))
+    CUDA_CALL(cudaMalloc(&this->bsdfs, sizeof(GPUBSDF_t) * GPUbsdfs.size()));
+    CUDA_CALL(cudaMemcpy(this->bsdfs, GPUbsdfs.data(), sizeof(GPUBSDF_t) * GPUbsdfs.size(), cudaMemcpyHostToDevice));
 
     this->num_bsdfs = GPUbsdfs.size();
 
@@ -182,7 +182,7 @@ namespace CGL
   }
 
   // Collect all primitives in scene and upload
-  void GPUScene::upload(const Scene *scene)
+  void GPUScene::upload(const Scene *scene, size_t max_leaf_size)
   {
     std::vector<Primitive *> primitives;
     for (SceneObject *obj : scene->objects)
@@ -207,8 +207,8 @@ namespace CGL
     }
     if (!GPUlights.empty())
     {
-      CUDA_CALL(cudaMalloc(&this->lights, sizeof(GPULight_t)*GPUlights.size()))
-      CUDA_CALL(cudaMemcpy(this->lights, GPUlights.data(), sizeof(GPULight_t)*GPUlights.size(), cudaMemcpyHostToDevice))
+        CUDA_CALL(cudaMalloc(&this->lights, sizeof(GPULight_t) * GPUlights.size()));
+        CUDA_CALL(cudaMemcpy(this->lights, GPUlights.data(), sizeof(GPULight_t) * GPUlights.size(), cudaMemcpyHostToDevice));
     }
     this->num_lights = GPUlights.size();
   }
