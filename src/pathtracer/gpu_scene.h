@@ -3,6 +3,7 @@
 
 #include "CGL/CGL.h"
 #include "CGL/vector3D.h"
+#include "CGL/matrix3x3.h"
 
 #include <vector>
 
@@ -40,7 +41,7 @@ typedef struct GPUBVHNode {
 // Camera information to generate new rays
 typedef struct GPUCamera {
   Vector3D pos;
-  Vector3D c2w0, c2w1, c2w2;   // columns of the camera-to-world rotation
+  Matrix3x3 c2w;  
   float tan_half_hfov, tan_half_vfov;
   float nclip, fclip;
 } GPUCamera_t;

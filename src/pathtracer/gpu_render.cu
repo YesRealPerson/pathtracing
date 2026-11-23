@@ -28,7 +28,7 @@ namespace CGL
   {
     float xc = (2.f * x - 1.f) * c.tan_half_hfov;
     float yc = (2.f * y - 1.f) * c.tan_half_vfov;
-    Vector3D d = (c.c2w0 * xc + c.c2w1 * yc - c.c2w2).unit();
+    Vector3D d = (c.c2w * Vector3D(xc, yc, -1.f)).unit();
     return make_gpu_ray(c.pos, d, c.nclip, c.fclip);
   }
 

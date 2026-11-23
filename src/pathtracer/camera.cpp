@@ -188,9 +188,7 @@ void Camera::load_settings(string filename) {
 GPUCamera Camera::to_gpu() const {
   GPUCamera g;
   g.pos = pos;
-  g.c2w0 = c2w[0];
-  g.c2w1 = c2w[1];
-  g.c2w2 = c2w[2];
+  g.c2w = c2w;
   g.tan_half_hfov = (float)tan(0.5 * hFov * PI / 180);
   g.tan_half_vfov = (float)tan(0.5 * vFov * PI / 180);
   g.nclip = (float)nClip;
