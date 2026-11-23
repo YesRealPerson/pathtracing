@@ -636,13 +636,7 @@ void Application::set_up_pathtracer() {
   this->renderer->set_camera(&this->camera);
   SceneObjects::Scene* static_scene = this->scene->get_static_scene();
   this->renderer->set_scene(static_scene);
-  // Sets gpu_scene struct values
-  // Uploads to GPU
   this->gpu_scene.upload(static_scene);
-  // Just enough to get a render going
-  // BVH that is quite literally just every primitive as a leaf node
-  // TODO: Make proper BVH!
-  this->gpu_scene.upload_dummy_bvh();
   this->renderer->set_gpu_scene(&this->gpu_scene);
   
   renderer->set_frame_size(screenW, screenH);

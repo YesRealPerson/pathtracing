@@ -26,6 +26,8 @@ typedef struct GPUPrimitive {
   int bsdf_id; // index for BSDF list
 } GPUPrimitive_t;
 
+#define GPU_BVH_STACK_SIZE 64
+
 // The root is always node 0.
 // Flat BVH node
 typedef struct GPUBVHNode {
@@ -81,17 +83,13 @@ struct GPUScene {
   GPUScene(const GPUScene&) = delete;
   GPUScene& operator=(const GPUScene&) = delete;
 
-  // Convert primitives to GPU equivalent and send to device
-  void upload(const std::vector<SceneObjects::Primitive*>& primitives);
+  // Convert primitives to GPU equivalent, build the BVH, and send both to device
+  // Primitives are uploaded in BVH order so each leaf is a contiguous range
+  void upload(const std::vector<SceneObjects::Primitive*>& primitives,
+              size_t max_leaf_size = 4);
 
   /// Convenience: collect every primitive in `scene` and upload.
-  void upload(const SceneObjects::Scene* scene);
-
-  /* CLAUDE CODE TO BE DELETED */
-  // Upload a single-leaf BVH covering every primitive (brute force).
-  // Call after upload(). Swap for a real flattened BVH later.
-  void upload_dummy_bvh();
-  /* END CLAUDE CODE TO BE DELETED */
+  void upload(const SceneObjects::Scene* scene, size_t max_leaf_size = 4);
 
   GPUSceneView view() const {
     return { primitives, nodes, (int)num_primitives, (int)num_nodes };

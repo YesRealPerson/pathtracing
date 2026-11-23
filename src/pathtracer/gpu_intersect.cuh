@@ -93,34 +93,51 @@ namespace CGL
   __device__ inline bool intersect_bbox(const Vector3D &bb_min, const Vector3D &bb_max,
                                         const GPURay &r, float t0, float t1)
   {
-    // TODO
-    return true; // "always hit" is a safe placeholder: it just disables culling
+
+    float tx_lo = (bb_min.x - r.o.x) * r.inv_d.x;
+    float tx_hi = (bb_max.x - r.o.x) * r.inv_d.x;
+    float ty_lo = (bb_min.y - r.o.y) * r.inv_d.y;
+    float ty_hi = (bb_max.y - r.o.y) * r.inv_d.y;
+    float tz_lo = (bb_min.z - r.o.z) * r.inv_d.z;
+    float tz_hi = (bb_max.z - r.o.z) * r.inv_d.z;
+
+    float t_enter = fmaxf(fmaxf(fminf(tx_lo, tx_hi), fminf(ty_lo, ty_hi)),
+                          fmaxf(fminf(tz_lo, tz_hi), t0));
+    float t_exit = fminf(fminf(fmaxf(tx_lo, tx_hi), fmaxf(ty_lo, ty_hi)),
+                         fminf(fmaxf(tz_lo, tz_hi), t1));
+    return t_enter <= t_exit;
   }
 
-/* UNREVIEWED CLAUDE CODE TO BE DELETED */
-  // Brute force: visit every node in the flat array and test every leaf's
-  // primitives. Each primitive is in exactly one leaf, so this checks all of
-  // them once. Correct for any flattened BVH (it just does no culling), and
-  // with the dummy BVH it is a single leaf covering the whole scene.
-  // Replace with a stack-based traversal + intersect_bbox once the real BVH
-  // is on the GPU.
+
   __device__ inline bool intersect_scene(const GPUSceneView &scene,
                                          GPURay r, GPUIntersect &hit)
   {
     hit.prim_id = -1;
     hit.t = r.max_t;
+    if (scene.num_nodes == 0)
+      return false;
 
-    for (int n = 0; n < scene.num_nodes; n++)
+    int stack[GPU_BVH_STACK_SIZE];
+    int sp = 0;
+    stack[sp++] = 0; // root
+
+    while (sp > 0)
     {
-      const GPUBVHNode &node = scene.nodes[n];
-      if (node.count <= 0)
-        continue; // interior node: holds no primitives itself
+      const GPUBVHNode &node = scene.nodes[stack[--sp]];
+      if (!intersect_bbox(node.bb_min, node.bb_max, r, r.min_t, r.max_t))
+        continue;
 
-      // intersect_primitive only accepts hits closer than r.max_t and then
-      // shrinks it, so the last hit written is the closest.
-      int end = node.start + node.count;
-      for (int i = node.start; i < end; i++)
-        intersect_primitive(scene, i, r, hit);
+      if (node.count > 0) // leaf
+      {
+        int end = node.start + node.count;
+        for (int i = node.start; i < end; i++)
+          intersect_primitive(scene, i, r, hit);
+      }
+      else
+      {
+        stack[sp++] = node.right;
+        stack[sp++] = node.left;
+      }
     }
 
     return hit.prim_id >= 0;
@@ -130,26 +147,40 @@ namespace CGL
   // Returns as soon as any primitive is hit in [r.min_t, r.max_t].
   __device__ inline bool has_intersection_scene(const GPUSceneView &scene, GPURay r)
   {
+    if (scene.num_nodes == 0)
+      return false;
+
     GPUIntersect tmp;
     tmp.prim_id = -1;
     tmp.t = r.max_t;
 
-    for (int n = 0; n < scene.num_nodes; n++)
+    int stack[GPU_BVH_STACK_SIZE];
+    int sp = 0;
+    stack[sp++] = 0;
+
+    while (sp > 0)
     {
-      const GPUBVHNode &node = scene.nodes[n];
-      if (node.count <= 0)
+      const GPUBVHNode &node = scene.nodes[stack[--sp]];
+      if (!intersect_bbox(node.bb_min, node.bb_max, r, r.min_t, r.max_t))
         continue;
 
-      int end = node.start + node.count;
-      for (int i = node.start; i < end; i++)
-        if (intersect_primitive(scene, i, r, tmp))
-          return true; // any hit is enough -- no need to find the closest
+      if (node.count > 0)
+      {
+        int end = node.start + node.count;
+        for (int i = node.start; i < end; i++)
+          if (intersect_primitive(scene, i, r, tmp))
+            return true;
+      }
+      else
+      {
+        stack[sp++] = node.right;
+        stack[sp++] = node.left;
+      }
     }
 
     return false;
   }
 
-/* END UNREVIEWED CLAUDE CODE */
 
 } // namespace CGL
 

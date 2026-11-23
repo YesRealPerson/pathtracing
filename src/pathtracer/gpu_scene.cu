@@ -4,9 +4,11 @@
 #include "scene/primitive.h"
 #include "scene/triangle.h"
 #include "scene/sphere.h"
+#include "scene/bbox.h"
 
 #include <cuda_runtime.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <type_traits>
@@ -17,17 +19,118 @@ namespace CGL
 
   using namespace SceneObjects;
 
-  void GPUScene::upload(const std::vector<Primitive *> &primitives)
+  namespace
   {
-    // Free existing primitives
+    
+    struct BVHBuilder
+    {
+      const std::vector<BBox> &bboxes;
+      std::vector<int> &order;
+      std::vector<GPUBVHNode_t> &nodes;
+      size_t max_leaf_size;
+      int max_depth = 0;
+
+      int build(size_t start, size_t end, int depth)
+      {
+        max_depth = std::max(max_depth, depth);
+
+        BBox bbox;
+        for (size_t i = start; i < end; i++)
+          bbox.expand(bboxes[order[i]]);
+        size_t primcount = end - start;
+
+        int idx = (int)nodes.size();
+        nodes.push_back({});
+        nodes[idx].bb_min = bbox.min;
+        nodes[idx].bb_max = bbox.max;
+
+        if (primcount <= max_leaf_size)
+        {
+          nodes[idx].left = -1;
+          nodes[idx].right = -1;
+          nodes[idx].start = (int)start;
+          nodes[idx].count = (int)primcount;
+          return idx;
+        }
+
+        BBox cbox;
+        for (size_t i = start; i < end; i++)
+          cbox.expand(bboxes[order[i]].centroid());
+        float e[3] = {cbox.extent.x, cbox.extent.y, cbox.extent.z};
+        int axis = std::max_element(e, e + 3) - e;
+        float split = (cbox.min[axis] + cbox.max[axis]) / 2;
+
+        std::vector<int> left, right;
+        for (size_t i = start; i < end; i++)
+        {
+          int p = order[i];
+          if (bboxes[p].centroid()[axis] < split)
+            left.push_back(p);
+          else
+            right.push_back(p);
+        }
+
+        if (left.empty() || right.empty())
+        {
+          left.assign(order.begin() + start, order.begin() + end);
+          std::sort(left.begin(), left.end(), [&](int a, int b) {
+            return bboxes[a].centroid()[axis] < bboxes[b].centroid()[axis];
+          });
+          right.assign(left.begin() + left.size() / 2, left.end());
+          left.resize(left.size() / 2);
+        }
+        auto temp = std::copy(left.begin(), left.end(), order.begin() + start);
+        std::copy(right.begin(), right.end(), temp);
+        size_t mid = start + left.size();
+
+        int l = build(start, mid, depth + 1);
+        int r = build(mid, end, depth + 1);
+        nodes[idx].left = l;
+        nodes[idx].right = r;
+        nodes[idx].start = 0;
+        nodes[idx].count = 0;
+        return idx;
+      }
+    };
+  }
+
+  void GPUScene::upload(const std::vector<Primitive *> &primitives,
+                        size_t max_leaf_size)
+  {
+    // frees any primitives that were in the GPU
     this->free();
-    // Build GPU prim list
+    if (primitives.empty())
+      return;
+
+    //build the BVH
+    std::vector<BBox> bboxes;
+    bboxes.reserve(primitives.size());
+    for (Primitive *p : primitives)
+      bboxes.push_back(p->get_bbox());
+
+    std::vector<int> order(primitives.size());
+    for (size_t i = 0; i < order.size(); i++)
+      order[i] = (int)i;
+
+    std::vector<GPUBVHNode_t> nodes;
+    BVHBuilder builder{bboxes, order, nodes, max_leaf_size};
+    builder.build(0, order.size(), 0);
+
+    if (builder.max_depth + 1 > GPU_BVH_STACK_SIZE)
+    {
+      fprintf(stderr, "[GPUScene] BVH depth %d exceeds traversal stack size %d\n",
+              builder.max_depth, GPU_BVH_STACK_SIZE);
+      exit(1);
+    }
+
+    // Build GPU prim list based on BVH order 
     std::vector<GPUPrimitive_t> GPUprims;
     int nextId = 0;
     std::unordered_map<BSDF *, int> uniqueBSDF;
     GPUprims.reserve(primitives.size());
-    for (Primitive *p : primitives)
+    for (int i : order)
     {
+      Primitive *p = primitives[i];
       GPUPrimitive_t gp;
       p->createGPU(&gp); // Fills in vectors and type
       BSDF *BSDFp = p->get_bsdf();
@@ -61,12 +164,29 @@ namespace CGL
       fprintf(stderr, "cudaMemcpy failed in upload\n");
       exit(1);
     }
-    
+
     this->num_primitives = GPUprims.size();
+
+    error = cudaMalloc(&this->nodes, sizeof(GPUBVHNode_t) * nodes.size());
+    if (error != cudaSuccess)
+    {
+      fprintf(stderr, "cudaMalloc failed in upload (BVH nodes)\n");
+      exit(1);
+    }
+    error = cudaMemcpy(this->nodes, nodes.data(), sizeof(GPUBVHNode_t) * nodes.size(), cudaMemcpyHostToDevice);
+    if (error != cudaSuccess)
+    {
+      fprintf(stderr, "cudaMemcpy failed in upload (BVH nodes)\n");
+      exit(1);
+    }
+    this->num_nodes = nodes.size();
+
+    fprintf(stdout, "Uploaded %zu primitives, %zu BVH nodes (max depth %d)\n",
+            this->num_primitives, this->num_nodes, builder.max_depth);
   }
 
   // Collect all primitives in scene and upload
-  void GPUScene::upload(const Scene *scene)
+  void GPUScene::upload(const Scene *scene, size_t max_leaf_size)
   {
     std::vector<Primitive *> primitives;
     for (SceneObject *obj : scene->objects)
@@ -75,7 +195,7 @@ namespace CGL
       primitives.reserve(primitives.size() + obj_prims.size());
       primitives.insert(primitives.end(), obj_prims.begin(), obj_prims.end());
     }
-    this->upload(primitives);
+    this->upload(primitives, max_leaf_size);
     for (Primitive* p : primitives) delete p;
   }
 
@@ -97,82 +217,5 @@ namespace CGL
     this->num_nodes = 0;
     this->host_bsdfs.clear();
   }
-
-  /* UNREVIEWED CLAUDE CODE TO BE DELETED */
-  /* UNREVIEWED CLAUDE CODE THAT JUST UPLOADS EVERY PRIMITIVE AS A LEAF INTO THE BVH */
-  void GPUScene::upload_dummy_bvh()
-  {
-    // Single leaf covering every primitive = brute-force intersection, but
-    // through the same node layout the real BVH will use.
-    if (this->nodes)
-    {
-      cudaFree(this->nodes);
-      this->nodes = nullptr;
-      this->num_nodes = 0;
-    }
-    if (this->num_primitives == 0)
-      return;
-
-    // Compute real scene bounds (finite bounds keep the slab test NaN-free).
-    // The host copy from upload() is gone, so pull the primitives back once.
-    // It's a one-time cost per scene load, and it goes away with the real BVH,
-    // whose root node already has a bbox.
-    std::vector<GPUPrimitive_t> host_prims(this->num_primitives);
-    cudaError_t error = cudaMemcpy(host_prims.data(), this->primitives,
-                                   sizeof(GPUPrimitive_t) * this->num_primitives,
-                                   cudaMemcpyDeviceToHost);
-    if (error != cudaSuccess)
-    {
-      fprintf(stderr, "cudaMemcpy (device->host) failed in upload_dummy_bvh: %s\n",
-              cudaGetErrorString(error));
-      exit(1);
-    }
-
-    Vector3D bb_min(INF_F), bb_max(-INF_F);
-    auto expand = [&](const Vector3D &lo, const Vector3D &hi) {
-      bb_min = Vector3D(fminf(bb_min.x, lo.x), fminf(bb_min.y, lo.y), fminf(bb_min.z, lo.z));
-      bb_max = Vector3D(fmaxf(bb_max.x, hi.x), fmaxf(bb_max.y, hi.y), fmaxf(bb_max.z, hi.z));
-    };
-    for (const GPUPrimitive_t &p : host_prims)
-    {
-      if (p.type == GPU_PRIM_TRIANGLE)
-      {
-        expand(p.a, p.a);
-        expand(p.b, p.b);
-        expand(p.c, p.c);
-      }
-      else if (p.type == GPU_PRIM_SPHERE)
-      {
-        Vector3D r(p.b.x);  // b.x = radius
-        expand(p.a - r, p.a + r);
-      }
-    }
-
-    GPUBVHNode_t root;
-    root.bb_min = bb_min;
-    root.bb_max = bb_max;
-    root.left = -1;
-    root.right = -1;
-    root.start = 0;
-    root.count = (int)this->num_primitives;
-
-    error = cudaMalloc(&this->nodes, sizeof(GPUBVHNode_t));
-    if (error != cudaSuccess)
-    {
-      fprintf(stderr, "cudaMalloc failed in upload_dummy_bvh: %s\n",
-              cudaGetErrorString(error));
-      exit(1);
-    }
-    error = cudaMemcpy(this->nodes, &root, sizeof(GPUBVHNode_t),
-                       cudaMemcpyHostToDevice);
-    if (error != cudaSuccess)
-    {
-      fprintf(stderr, "cudaMemcpy failed in upload_dummy_bvh: %s\n",
-              cudaGetErrorString(error));
-      exit(1);
-    }
-    this->num_nodes = 1;
-  }
-  /* END UNREVIEWED CLAUDE CODE */
 
 } // namespace CGL
