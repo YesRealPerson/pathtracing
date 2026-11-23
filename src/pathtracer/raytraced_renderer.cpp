@@ -91,7 +91,8 @@ RaytracedRenderer::RaytracedRenderer(size_t ns_aa,
  * Frees all the internal resources used by the pathtracer.
  */
 RaytracedRenderer::~RaytracedRenderer() {
-
+  continueRaytracing = false;
+  if (gpu_thread.joinable()) gpu_thread.join();
   delete bvh;
   delete pt;
   render_free(gpu_buffers);
@@ -226,8 +227,9 @@ void RaytracedRenderer::stop() {
       state = READY;
       break;
     case RENDERING:
+      continueRaytracing = false;
     case DONE:
-      // No more CPU rendering, no threads to join on
+      if (gpu_thread.joinable()) gpu_thread.join();
       state = READY;
       break;
   }
@@ -291,7 +293,12 @@ void RaytracedRenderer::start_raytracing() {
     cv_done.notify_one();
     return;
   }
-  raytrace_gpu();
+
+  frameBuffer.clear();
+  // Ensure thread finished previous job
+  if (gpu_thread.joinable()) gpu_thread.join();
+  // Spawn GPU thread
+  gpu_thread = std::thread(&RaytracedRenderer::raytrace_gpu, this);
 }
 
 void RaytracedRenderer::raytrace_gpu() {
@@ -301,7 +308,6 @@ void RaytracedRenderer::raytrace_gpu() {
   Timer timer;
   timer.start();
 
-  frameBuffer.clear();
   // Sync render settings
   // Need to just replace Raytraced Renderer at some point ngl
   // But then again this is quite literally just stapling on CUDA
@@ -310,16 +316,15 @@ void RaytracedRenderer::raytrace_gpu() {
   gpu_scene->max_ray_depth = pt->max_ray_depth;
   gpu_scene->ns_area_light = pt->ns_area_light;
   gpu_scene->samples_per_batch = pt->samplesPerBatch;
-  // TODO: UPDATE GPU RENDERING FUNCTION
   render_init(gpu_buffers, (int)w, (int)h); // (re)allocates if size changed, zeroes accumulator
   const GPUSceneView view = gpu_scene->view();
   const GPUCamera cam = camera->to_gpu();
   const int ns_aa = std::max(1, (int)pt->ns_aa);
-  // One sample per pixel per launch, accumulated on the device
   for (int s = 0; s < ns_aa; s++) {
+    if (!continueRaytracing) break; // stop() was called
     render(view, cam, gpu_buffers);
     fprintf(stdout, "\r[PathTracer] Progress: %5.1f%% (%d/%d spp)",
-            100.0 * (s + 1) / ns_aa, s + 1, ns_aa);
+            100.0 * (s+1) / ns_aa, (s+1), ns_aa);
     fflush(stdout);
   }
   fprintf(stdout, "\n");
@@ -327,10 +332,16 @@ void RaytracedRenderer::raytrace_gpu() {
   pt->write_to_framebuffer(frameBuffer, 0, 0, w, h);
 
   timer.stop();
-  // TODO: Add metric for how many rays we throw
-  fprintf(stdout, "[PathTracer] Done! (%.4fs)\n", timer.duration()); fflush(stdout);
+  // Camera rays only (one per pixel per sample); shadow rays aren't counted
+  double camera_rays = (double)w * h * ns_aa;
+  fprintf(stdout, "[PathTracer] Done! (%.4fs, %.2f M camera rays/s)\n", timer.duration(), camera_rays / timer.duration() / 1e6);
+  fflush(stdout);
 
-  state = DONE;
+  {
+    // critical section for state change
+    lock_guard<std::mutex> lk(m_done);
+    state = DONE;
+  }
   cv_done.notify_one();
 }
 
