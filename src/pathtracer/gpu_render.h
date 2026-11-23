@@ -15,6 +15,8 @@ namespace CGL {
 struct GPURenderBuffers {
   curandStatePhilox4_32_10 *states = nullptr; // one RNG state per pixel
   Vector3D *d_out = nullptr;                  // device frame buffer
+  Vector3D *s12 = nullptr;
+  bool *converge = nullptr;
   int w = 0, h = 0;
 };
 
@@ -29,8 +31,8 @@ void render_free(GPURenderBuffers &buf);
 // Traces one sample per pixel and adds it into buf.d_out. Blocks until done.
 void render(const GPUSceneView &scene, const GPUCamera cam, GPURenderBuffers &buf);
 
-// Copies the accumulator to host_out (w*h entries) divided by num_samples.
-void render_readback(const GPURenderBuffers &buf, Vector3D *host_out, int num_samples);
+// Copies the accumulator to host_out (w*h entries).
+void render_readback(const GPURenderBuffers &buf, Vector3D *host_out);
 
 } // namespace CGL
 

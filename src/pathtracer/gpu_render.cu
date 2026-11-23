@@ -8,6 +8,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 // From CUDA docs
 #define CUDA_CALL(x)                                  \
@@ -32,6 +33,11 @@ namespace CGL
     float yc = (2.f * y - 1.f) * c.tan_half_vfov;
     Vector3D d = (c.c2w * Vector3D(xc, yc, -1.f)).unit();
     return make_gpu_ray(c.pos, d, c.nclip, c.fclip);
+  }
+
+  __device__ inline bool gpu_coin_flip(curandStatePhilox4_32_10_t *rng, float chance)
+  {
+    return curand_uniform(rng) < chance;
   }
 
   // see UniformGridSampler2D
@@ -206,7 +212,8 @@ namespace CGL
   }
   __global__ void render_kernel(
       GPUSceneView scene, GPUCamera cam,
-      Vector3D *accum, int w, int h,
+      Vector3D *accum, Vector3D *s12, bool *converge,
+      int w, int h,
       curandStatePhilox4_32_10_t *states)
   {
     // thread id
@@ -215,6 +222,8 @@ namespace CGL
     if (x >= w || y >= h)
       return;
     int id = y * w + x;
+    if (converge[id])
+      return;
     curandStatePhilox4_32_10_t rng = states[id];
 
     float xOfst = curand_uniform(&rng);
@@ -230,8 +239,19 @@ namespace CGL
       if (!intersect_scene(scene, r, hit))
         break;
 
-      if (depth == scene.max_ray_depth) L_out += scene.bsdfs[hit.bsdf_id].radiance;
-      if (scene.bsdfs[hit.bsdf_id].type == EMISSIVE) break;
+      if (depth == scene.max_ray_depth)
+        L_out += scene.bsdfs[hit.bsdf_id].radiance;
+      if (scene.bsdfs[hit.bsdf_id].type == EMISSIVE)
+        break;
+
+      // Russian Roulette
+
+      if (depth < scene.max_ray_depth - 1)
+      {
+        if (gpu_coin_flip(&rng, 0.35f))
+          break;
+        fr = fr / 0.65f;
+      }
 
       // Light at hit point, initial hit has fr of 1
       L_out += fr * bounce(scene, &rng, r, hit);
@@ -250,11 +270,30 @@ namespace CGL
       Vector3D nextf = bsdf_sample_f(scene.bsdfs[hit.bsdf_id], &rng, &wi, &pdf);
       Vector3D wiw = o2w * wi;
       float theta = dot(hit.n, wiw);
-      fr = fr* nextf * theta / pdf;
+      fr = fr *nextf *theta / pdf;
       r = make_gpu_ray(hit_p + EPS_F2 * wiw, wiw, 0.f, INF_F);
       depth--;
     }
     accum[id] += L_out;
+    Vector3D sigma = s12[id]; // (s1, s2, # of itrs)
+    float lum = L_out.illum();
+    sigma += Vector3D(lum, lum * lum, 1);
+    float n = sigma.z;
+    if (((int)n) % scene.samples_per_batch == 0 && n > 1)
+    {
+      float s1 = sigma.x;
+      float s2 = sigma.y;
+      float s = (s2 - s1 * s1 / n) / (n - 1);
+      s = fmaxf(s, 0.f);
+      s = sqrtf(s);
+      float mu = s1 / n;
+      float I = 1.96f * (s / sqrt(n));
+      if (I <= scene.maxTolerance * mu)
+      {
+        converge[id] = true;
+      }
+    }
+    s12[id] = sigma;
     states[id] = rng;
   }
 
@@ -288,8 +327,14 @@ namespace CGL
       CUDA_CALL(cudaFree(buf.states));
     if (buf.d_out)
       CUDA_CALL(cudaFree(buf.d_out));
+    if (buf.s12)
+      CUDA_CALL(cudaFree(buf.s12));
+    if (buf.converge)
+      CUDA_CALL(cudaFree(buf.converge));
     buf.states = nullptr;
     buf.d_out = nullptr;
+    buf.s12 = nullptr;
+    buf.converge = nullptr;
     buf.w = buf.h = 0;
   }
 
@@ -299,17 +344,23 @@ namespace CGL
       return;
     // Already set up at this size: keep the RNG streams going, just reset
     // the accumulator for a fresh render
+    size_t pixels = (size_t)w * h;
     if (buf.states && buf.d_out && buf.w == w && buf.h == h)
     {
-      CUDA_CALL(cudaMemset(buf.d_out, 0, (size_t)w * h * sizeof(Vector3D)));
+      CUDA_CALL(cudaMemset(buf.d_out, 0, pixels * sizeof(Vector3D)));
+      CUDA_CALL(cudaMemset(buf.s12, 0, pixels * sizeof(Vector3D)));
+      CUDA_CALL(cudaMemset(buf.converge, 0, pixels * sizeof(bool)));
       return;
     }
 
     render_free(buf);
-    size_t pixels = (size_t)w * h;
     CUDA_CALL(cudaMalloc(&buf.states, pixels * sizeof(curandStatePhilox4_32_10_t)));
     CUDA_CALL(cudaMalloc(&buf.d_out, pixels * sizeof(Vector3D)));
     CUDA_CALL(cudaMemset(buf.d_out, 0, pixels * sizeof(Vector3D)));
+    CUDA_CALL(cudaMalloc(&buf.s12, pixels * sizeof(Vector3D)));
+    CUDA_CALL(cudaMemset(buf.s12, 0, pixels * sizeof(Vector3D)));
+    CUDA_CALL(cudaMalloc(&buf.converge, pixels * sizeof(bool)));
+    CUDA_CALL(cudaMemset(buf.converge, 0, pixels * sizeof(bool)));
     buf.w = w;
     buf.h = h;
 
@@ -322,22 +373,28 @@ namespace CGL
   {
     if (!buf.states || !buf.d_out || scene.num_nodes == 0)
       return;
-    render_kernel<<<grid_for(buf.w, buf.h), kBlock>>>(scene, cam, buf.d_out,
+    render_kernel<<<grid_for(buf.w, buf.h), kBlock>>>(scene, cam, buf.d_out, buf.s12, buf.converge,
                                                       buf.w, buf.h, buf.states);
     CUDA_CALL(cudaGetLastError());
     CUDA_CALL(cudaDeviceSynchronize());
   }
 
-  void render_readback(const GPURenderBuffers &buf, Vector3D *host_out, int num_samples)
+  void render_readback(const GPURenderBuffers &buf, Vector3D *host_out)
   {
-    if (!buf.d_out || num_samples <= 0)
+    if (!buf.d_out || !buf.s12)
       return;
     size_t pixels = (size_t)buf.w * buf.h;
     CUDA_CALL(cudaMemcpy(host_out, buf.d_out, pixels * sizeof(Vector3D),
                          cudaMemcpyDeviceToHost));
-    float inv = 1.f / num_samples;
+    // s12 lives on the device; copy it back to read per-pixel sample counts
+    std::vector<Vector3D> s12(pixels);
+    CUDA_CALL(cudaMemcpy(s12.data(), buf.s12, pixels * sizeof(Vector3D),
+                         cudaMemcpyDeviceToHost));
     for (size_t i = 0; i < pixels; i++)
-      host_out[i] *= inv;
+    {
+      float n = s12[i].z; // number of samples actually taken
+      host_out[i] = n > 0.f ? host_out[i] * (1.f / n) : Vector3D(0.f);
+    }
   }
 
 } // namespace CGL

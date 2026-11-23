@@ -92,6 +92,7 @@ typedef struct GPUSceneView {
   int max_ray_depth;  // maximum ray depth
   int ns_area_light;  // samples per area light
   int samples_per_batch; // samples between adaptive sampling convergence checks
+  float maxTolerance;    // adaptive sampling convergence tolerance
 } GPUSceneView_t;
 
 struct GPUScene {
@@ -105,6 +106,7 @@ struct GPUScene {
   size_t max_ray_depth = 1;  // maximum ray depth
   size_t ns_area_light = 1;  // samples per area light
   size_t samples_per_batch = 32; // samples between adaptive sampling convergence checks
+  float maxTolerance = 0.05f;    // adaptive sampling convergence tolerance
 
   GPUBSDF* bsdfs = nullptr; // indexed by GPUPrimitive::bsdf_id
   size_t num_bsdfs = 0;
@@ -143,7 +145,7 @@ struct GPUScene {
     return { primitives, nodes, bsdfs, lights,
              (int)num_primitives, (int)num_nodes, (int)num_bsdfs, (int)num_lights,
              (int)ns_aa, (int)max_ray_depth, (int)ns_area_light,
-             (int)samples_per_batch };
+             (int)samples_per_batch, maxTolerance };
   }
 
   void free();

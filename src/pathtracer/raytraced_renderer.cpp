@@ -316,6 +316,7 @@ void RaytracedRenderer::raytrace_gpu() {
   gpu_scene->max_ray_depth = pt->max_ray_depth;
   gpu_scene->ns_area_light = pt->ns_area_light;
   gpu_scene->samples_per_batch = pt->samplesPerBatch;
+  gpu_scene->maxTolerance = (float)pt->maxTolerance;
   render_init(gpu_buffers, (int)w, (int)h); // (re)allocates if size changed, zeroes accumulator
   const GPUSceneView view = gpu_scene->view();
   const GPUCamera cam = camera->to_gpu();
@@ -328,7 +329,7 @@ void RaytracedRenderer::raytrace_gpu() {
     fflush(stdout);
   }
   fprintf(stdout, "\n");
-  render_readback(gpu_buffers, pt->sampleBuffer.data.data(), ns_aa);
+  render_readback(gpu_buffers, pt->sampleBuffer.data.data());
   pt->write_to_framebuffer(frameBuffer, 0, 0, w, h);
 
   timer.stop();
