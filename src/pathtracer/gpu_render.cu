@@ -32,38 +32,10 @@ namespace CGL
     return make_gpu_ray(c.pos, d, c.nclip, c.fclip);
   }
 
-  // PathTracer::debug_shading / normal_shading (pathtracer.h) except on device.
-  __device__ inline Vector3D debug_shading(const Vector3D &d)
-  {
-    return Vector3D(fabsf(d.r), fabsf(d.g), 0.f).unit();
-  }
-
-  __device__ inline Vector3D normal_shading(const Vector3D &n)
-  {
-    return n * 0.5f + Vector3D(0.5f);
-  }
-
-  // ??? REVIEW ME BEFORE COMMIT
-  __device__ inline bool gpu_coin_flip(curandStatePhilox4_32_10_t *rng, float p)
-  {
-    return curand_uniform(rng) < p;
-  }
-
   // see UniformGridSampler2D
   __device__ inline Vector2D gpu_sample_grid_2d(curandStatePhilox4_32_10_t *rng)
   {
     return Vector2D(curand_uniform(rng), curand_uniform(rng));
-  }
-
-  // see UniformSphereSampler3D
-  __device__ inline Vector3D gpu_sample_uniform_sphere(curandStatePhilox4_32_10_t *rng)
-  {
-    float z = curand_uniform(rng) * 2.f - 1.f;
-    float sinTheta = sqrtf(fmaxf(0.f, 1.f - z * z));
-    float phi = 2.f * PI_F * curand_uniform(rng);
-    float s, c;
-    sincosf(phi, &s, &c);
-    return Vector3D(c * sinTheta, s * sinTheta, z);
   }
 
   // see CosineWeightedHemisphereSampler3D
@@ -241,8 +213,12 @@ namespace CGL
     CUDA_CALL(cudaMalloc(&states, pixels * sizeof(curandStatePhilox4_32_10_t)));
     CUDA_CALL(cudaMalloc(&d_out, bytes));
 
-    // TODO write comments
+    // 16x16 block of 256 threads
+    // Each "warp" is 32 threads, so blocks should be a multiple of 32
+    // GPUs cap resident threads, 4080 super caps at 1536
+    // largest same size block would be 16x16
     dim3 block(16, 16);
+    // Number of blocks needed to cover the entire image
     dim3 grid((w + block.x - 1) / block.x, (h + block.y - 1) / block.y);
 
     curand_setup<<<grid, block>>>(states, w, h);

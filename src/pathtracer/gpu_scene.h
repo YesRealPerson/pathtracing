@@ -60,20 +60,17 @@ typedef enum GPULightType {
   GPU_LIGHT_POINT       = 0,
   GPU_LIGHT_DIRECTIONAL = 1,
   GPU_LIGHT_AREA        = 2,
-  GPU_LIGHT_HEMISPHERE  = 3, // ambient (InfiniteHemisphereLight)
-  GPU_LIGHT_UNKNOWN     = 4, // spot, sphere, mesh, environment: skip on GPU
+  GPU_LIGHT_HEMISPHERE  = 3, 
+  GPU_LIGHT_UNKNOWN     = 4,
 } GPULightType_t;
 
 typedef struct GPULight {
   GPULightType_t type;
   Vector3D radiance;
-  Vector3D position;     // point, area
-  Vector3D direction;    // directional: direction TO light; area: light normal
-                         // hemisphere: hemisphere axis (sampleToWorld col 2)
-  Vector3D dim_x, dim_y; // area: light extents
-                         // hemisphere: sampleToWorld cols 0, 1
-                         // so wi = s.x*dim_x + s.y*dim_y + s.z*direction
-  float area;            // area
+  Vector3D position;
+  Vector3D direction;
+  Vector3D dim_x, dim_y;
+  float area;
 } GPULight_t;
 
 // Pointers/information needed for GPU kernels

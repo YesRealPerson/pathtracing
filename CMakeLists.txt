@@ -170,10 +170,8 @@ set(APPLICATION_HEADERS
     src/pathtracer/raytraced_renderer.h
     src/pathtracer/sampler.h
     src/pathtracer/gpu_scene.h
-    # UNREVIEWED CLAUDE CODE TO BE DELETED
     src/pathtracer/gpu_intersect.cuh
     src/pathtracer/gpu_render.h
-    # END UNREVIEWED CLAUDE CODE
     # misc
     src/util/sphere_drawing.h
     src/util/lodepng.h
