@@ -129,7 +129,7 @@ namespace CGL
 
   __global__ void render_kernel(
       GPUSceneView scene, GPUCamera cam,
-      Vector3D *out, int w, int h,
+      Vector3D *accum, int w, int h,
       curandStatePhilox4_32_10_t *states)
   {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -140,54 +140,52 @@ namespace CGL
     curandStatePhilox4_32_10_t rng = states[id];
 
     Vector3D L_out(0.f);
-    for (int i = 0; i < scene.ns_aa; i++)
+    float xOfst = curand_uniform(&rng);
+    float yOfst = curand_uniform(&rng);
+    GPURay r = camera_ray(cam, (x + xOfst) / w, (y + yOfst) / h);
+    GPUIntersect hit;
+
+    // Update for new BVHs
+    if (intersect_scene(scene, r, hit))
     {
-      float xOfst = curand_uniform(&rng);
-      float yOfst = curand_uniform(&rng);
-      GPURay r = camera_ray(cam, (x + xOfst) / w, (y + yOfst) / h);
-      GPUIntersect hit;
+      // Debug shading
+      // L_out = (hit.t == INFINITY) ? debug_shading(r.d) : normal_shading(hit.n);
 
-      // Update for new BVHs
-      if (intersect_scene(scene, r, hit))
+      // Direct lighting
+      // Zero bounce
+      L_out += scene.bsdfs[hit.bsdf_id].radiance;
+      // One bounce
+      const Vector3D hit_p = r.o + r.d * hit.t;
+      Vector3D fr = bsdf_f(scene.bsdfs[hit.bsdf_id]);
+      for (int j = 0; j < scene.num_lights; j++)
       {
-        // Debug shading
-        // L_out = (hit.t == INFINITY) ? debug_shading(r.d) : normal_shading(hit.n);
-
-        // Direct lighting
-        // Zero bounce
-        L_out += scene.bsdfs[hit.bsdf_id].radiance;
-        // One bounce
-        const Vector3D hit_p = r.o + r.d * hit.t;
-        Vector3D fr = bsdf_f(scene.bsdfs[hit.bsdf_id]);
-        for (int j = 0; j < scene.num_lights; j++)
+        const GPULight light = scene.lights[j];
+        if (light.type == GPU_LIGHT_UNKNOWN)
+          continue;
+        Vector3D out, wi;
+        float dist, pdf;
+        int n = scene.ns_area_light;
+        if (light.type == GPU_LIGHT_POINT || light.type == GPU_LIGHT_DIRECTIONAL)
+          n = 1;
+        for (int i = 0; i < n; i++)
         {
-          const GPULight light = scene.lights[j];
-          if (light.type == GPU_LIGHT_UNKNOWN)
-            continue;
-          Vector3D out, wi;
-          float dist, pdf;
-          int n = scene.ns_area_light;
-          if (light.type == GPU_LIGHT_POINT || light.type == GPU_LIGHT_DIRECTIONAL)
-            n = 1;
-          for (int i = 0; i < n; i++)
+          Vector3D L = sample_L(light, &rng, hit_p, &wi, &dist, &pdf);
+          GPURay i2l = make_gpu_ray(hit_p + EPS_F * wi, wi, 0.f, dist - EPS_F); // origin at hit point, random direction
+          // Nothign blocking th elight
+          if (!has_intersection_scene(scene, i2l))
           {
-            Vector3D L = sample_L(light, &rng, hit_p, &wi, &dist, &pdf);
-            GPURay i2l = make_gpu_ray(hit_p + EPS_F * wi, wi, 0.f, dist - EPS_F); // origin at hit point, random direction
-            // Nothign blocking th elight
-            if (!has_intersection_scene(scene, i2l))
-            {
-              // both need to be in object coords
-              float theta = dot(hit.n, wi);
-              if (theta < 0)
-                continue; // light is behind the surface
-              out += fr * L * theta / pdf;
-            }
+            // both need to be in object coords
+            float theta = dot(hit.n, wi);
+            if (theta < 0)
+              continue; // light is behind the surface
+            out += fr * L * theta / pdf;
           }
-          L_out += out / n;
         }
+        L_out += out / n;
       }
     }
-    out[id] = L_out / scene.ns_aa;
+    accum[id] += L_out;
+    states[id] = rng;
   }
 
   // Setup randoms per pixel
@@ -202,33 +200,74 @@ namespace CGL
     curand_init(184, id, 0, &states[id]);
   }
 
-  void render(const GPUSceneView &scene, const GPUCamera cam, Vector3D *host_out, int w, int h)
+  // 16x16 block of 256 threads
+  // Each "warp" is 32 threads, so blocks should be a multiple of 32
+  // GPUs cap resident threads, 4080 super caps at 1536
+  // largest same size block would be 16x16
+  static const dim3 kBlock(16, 16);
+
+  // Number of blocks needed to cover the entire image
+  static inline dim3 grid_for(int w, int h)
   {
-    if (w <= 0 || h <= 0 || scene.num_nodes == 0)
+    return dim3((w + kBlock.x - 1) / kBlock.x, (h + kBlock.y - 1) / kBlock.y);
+  }
+
+  void render_free(GPURenderBuffers &buf)
+  {
+    if (buf.states)
+      CUDA_CALL(cudaFree(buf.states));
+    if (buf.d_out)
+      CUDA_CALL(cudaFree(buf.d_out));
+    buf.states = nullptr;
+    buf.d_out = nullptr;
+    buf.w = buf.h = 0;
+  }
+
+  void render_init(GPURenderBuffers &buf, int w, int h)
+  {
+    if (w <= 0 || h <= 0)
       return;
+    // Already set up at this size: keep the RNG streams going, just reset
+    // the accumulator for a fresh render
+    if (buf.states && buf.d_out && buf.w == w && buf.h == h)
+    {
+      CUDA_CALL(cudaMemset(buf.d_out, 0, (size_t)w * h * sizeof(Vector3D)));
+      return;
+    }
+
+    render_free(buf);
     size_t pixels = (size_t)w * h;
-    size_t bytes = pixels * sizeof(Vector3D);
-    curandStatePhilox4_32_10_t *states = nullptr; // Maybe initialize per GPUScene, not sure
-    Vector3D *d_out = nullptr;
-    CUDA_CALL(cudaMalloc(&states, pixels * sizeof(curandStatePhilox4_32_10_t)));
-    CUDA_CALL(cudaMalloc(&d_out, bytes));
+    CUDA_CALL(cudaMalloc(&buf.states, pixels * sizeof(curandStatePhilox4_32_10_t)));
+    CUDA_CALL(cudaMalloc(&buf.d_out, pixels * sizeof(Vector3D)));
+    CUDA_CALL(cudaMemset(buf.d_out, 0, pixels * sizeof(Vector3D)));
+    buf.w = w;
+    buf.h = h;
 
-    // 16x16 block of 256 threads
-    // Each "warp" is 32 threads, so blocks should be a multiple of 32
-    // GPUs cap resident threads, 4080 super caps at 1536
-    // largest same size block would be 16x16
-    dim3 block(16, 16);
-    // Number of blocks needed to cover the entire image
-    dim3 grid((w + block.x - 1) / block.x, (h + block.y - 1) / block.y);
-
-    curand_setup<<<grid, block>>>(states, w, h);
-    render_kernel<<<grid, block>>>(scene, cam, d_out, w, h, states);
+    curand_setup<<<grid_for(w, h), kBlock>>>(buf.states, w, h);
     CUDA_CALL(cudaGetLastError());
     CUDA_CALL(cudaDeviceSynchronize());
+  }
 
-    CUDA_CALL(cudaMemcpy(host_out, d_out, bytes, cudaMemcpyDeviceToHost));
-    CUDA_CALL(cudaFree(d_out));
-    CUDA_CALL(cudaFree(states));
+  void render(const GPUSceneView &scene, const GPUCamera cam, GPURenderBuffers &buf)
+  {
+    if (!buf.states || !buf.d_out || scene.num_nodes == 0)
+      return;
+    render_kernel<<<grid_for(buf.w, buf.h), kBlock>>>(scene, cam, buf.d_out,
+                                                       buf.w, buf.h, buf.states);
+    CUDA_CALL(cudaGetLastError());
+    CUDA_CALL(cudaDeviceSynchronize());
+  }
+
+  void render_readback(const GPURenderBuffers &buf, Vector3D *host_out, int num_samples)
+  {
+    if (!buf.d_out || num_samples <= 0)
+      return;
+    size_t pixels = (size_t)buf.w * buf.h;
+    CUDA_CALL(cudaMemcpy(host_out, buf.d_out, pixels * sizeof(Vector3D),
+                         cudaMemcpyDeviceToHost));
+    float inv = 1.f / num_samples;
+    for (size_t i = 0; i < pixels; i++)
+      host_out[i] *= inv;
   }
 
 } // namespace CGL

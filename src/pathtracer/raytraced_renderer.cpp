@@ -94,6 +94,7 @@ RaytracedRenderer::~RaytracedRenderer() {
 
   delete bvh;
   delete pt;
+  render_free(gpu_buffers);
 
 }
 
@@ -310,7 +311,19 @@ void RaytracedRenderer::raytrace_gpu() {
   gpu_scene->ns_area_light = pt->ns_area_light;
   gpu_scene->samples_per_batch = pt->samplesPerBatch;
   // TODO: UPDATE GPU RENDERING FUNCTION
-  render(gpu_scene->view(), camera->to_gpu(), pt->sampleBuffer.data.data(), (int)w, (int)h);
+  render_init(gpu_buffers, (int)w, (int)h); // (re)allocates if size changed, zeroes accumulator
+  const GPUSceneView view = gpu_scene->view();
+  const GPUCamera cam = camera->to_gpu();
+  const int ns_aa = std::max(1, (int)pt->ns_aa);
+  // One sample per pixel per launch, accumulated on the device
+  for (int s = 0; s < ns_aa; s++) {
+    render(view, cam, gpu_buffers);
+    fprintf(stdout, "\r[PathTracer] Progress: %5.1f%% (%d/%d spp)",
+            100.0 * (s + 1) / ns_aa, s + 1, ns_aa);
+    fflush(stdout);
+  }
+  fprintf(stdout, "\n");
+  render_readback(gpu_buffers, pt->sampleBuffer.data.data(), ns_aa);
   pt->write_to_framebuffer(frameBuffer, 0, 0, w, h);
 
   timer.stop();

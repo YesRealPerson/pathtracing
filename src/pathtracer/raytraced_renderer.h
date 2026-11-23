@@ -31,6 +31,7 @@ using CGL::SceneObjects::BVHAccel;
 
 #include "pathtracer.h"
 #include "pathtracer/gpu_scene.h"
+#include "pathtracer/gpu_render.h"
 
 namespace CGL {
 
@@ -221,6 +222,7 @@ public:
 
   // GPU //
   GPUScene* gpu_scene = nullptr; ///< not owned
+  GPURenderBuffers gpu_buffers;  ///< owned; device frame buffer + RNG states
 
   // Integration state //
 
