@@ -46,16 +46,15 @@
 <body>
     <div class="container">
         <h1>CS184 Milestone Presentation</h1>
-
-        <h2>GPU-Accelerated Pathtracer</h2>
-        <p class="names">Stephen, Connor, Charlie, Abe</p>
-
+        <p>
+            <a href="https://docs.google.com/presentation/d/1znhgAeR9blm17HKnt3ysYg8mr4HjHNYgKd8nJV6DgD4/edit?usp=sharing">Presentation</a> <a>Video</a>
+        </p>
         <h2>Summary of Current Progress</h2>
         <ul>
             <li>Most features of the CPU path tracer adapted to CUDA to be run on the GPU
                 <ul>
                     <li>Camera ray generation: one thread per pixel</li>
-                    <li>BVH construction and Ray-triangle intersection</li>
+                    <li>BVH traversal and Ray-triangle intersection</li>
                     <li>BSDF and light sampling</li>
                     <li>Direct Lighting</li>
                 </ul>
@@ -79,27 +78,31 @@
         </ul>
 
         <h2>Performance Comparisons</h2>
-        <p>On M4 Pro CPU and on an RTX 5090 at 32 samples per area light and 64 samples per pixel 1280x960</p>
+        <p>On M4 Pro CPU and on an RTX 5090 at 32 samples per area light and 64 samples per pixel at 1280x960</p>
         <table class="data-table">
             <tr>
                 <th>CPU vs GPU Time comp.</th>
                 <th>CPU</th>
                 <th>GPU</th>
+                <th>Speedup</th>
             </tr>
             <tr>
                 <td>teapot (2,464 tri.)</td>
                 <td>4.10s</td>
                 <td>0.024s</td>
+                <td>171×</td>
             </tr>
             <tr>
                 <td>Max Planck (50,801 tri.)</td>
                 <td>5.06s</td>
                 <td>0.074s</td>
+                <td>68×</td>
             </tr>
             <tr>
                 <td>WALL-E (240,326 tri.)</td>
                 <td>19.97s</td>
                 <td>0.821s</td>
+                <td>24×</td>
             </tr>
         </table>
         <table class="data-table">
@@ -124,14 +127,13 @@
                 <td>240,326</td>
             </tr>
         </table>
-        <p>We believe blob renders faster because fewer triangles are in view during the rendering process</p>
 
         <h2>GPU Flattening Approach</h2>
         <ul>
             <li>Polymorphism is bad (for GPUs)!
                 <ul>
                     <li>We want to be able to read everything related to a scene at once and be able to simply index across them</li>
-                    <li>The starter code uses a lot of polymorphism to have unique features i.e. intersect for spheres
+                    <li>The starter code uses a lot of polymorphism to have unique features e.g. intersect for spheres
                         vs triangles</li>
                 </ul>
             </li>
