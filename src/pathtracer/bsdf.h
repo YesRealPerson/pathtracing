@@ -7,6 +7,7 @@
 
 #include "pathtracer/sampler.h"
 #include "util/image.h"
+#include "pathtracer/gpu_scene.h"
 
 #include <algorithm>
 
@@ -102,6 +103,12 @@ class BSDF {
   virtual void render_debugger_node() {};
 
   /**
+   * Convert to GPU equivalent. Only Diffuse and Emission are supported;
+   * everything else falls back to a black diffuse with a warning.
+   */
+  virtual void createGPU(GPUBSDF_t* bsdf) const;
+
+  /**
    * Reflection helper
    */
   virtual void reflect(const Vector3D wo, Vector3D* wi);
@@ -134,6 +141,7 @@ class DiffuseBSDF : public BSDF {
   bool is_delta() const { return false; }
 
   void render_debugger_node();
+  void createGPU(GPUBSDF_t* bsdf) const;
 
 private:
   /*
@@ -279,6 +287,7 @@ class EmissionBSDF : public BSDF {
   bool is_delta() const { return false; }
 
   void render_debugger_node();
+  void createGPU(GPUBSDF_t* bsdf) const;
 
  private:
 

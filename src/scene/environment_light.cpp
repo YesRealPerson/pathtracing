@@ -149,5 +149,11 @@ namespace CGL { namespace SceneObjects {
 
   }
 
+  // Not supported on GPU (needs envmap texture + sampling tables uploaded)
+  void EnvironmentLight::createGPU(GPULight_t* light) const {
+    *light = GPULight_t{};
+    light->type = GPU_LIGHT_UNKNOWN;
+  }
+
 } // namespace SceneObjects
 } // namespace CGL

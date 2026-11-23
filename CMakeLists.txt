@@ -66,9 +66,7 @@ set(APPLICATION_3_1_SOURCE
     src/pathtracer/bsdf.cpp
     src/pathtracer/pathtracer.cpp
     src/pathtracer/gpu_scene.cu
-    # UNREVIEWED CLAUDE CODE TO BE DELETED
     src/pathtracer/gpu_render.cu
-    # END UNREVIEWED CLAUDE CODE
 
     # Imgui
     src/imgui/imgui.cpp
@@ -172,10 +170,8 @@ set(APPLICATION_HEADERS
     src/pathtracer/raytraced_renderer.h
     src/pathtracer/sampler.h
     src/pathtracer/gpu_scene.h
-    # UNREVIEWED CLAUDE CODE TO BE DELETED
     src/pathtracer/gpu_intersect.cuh
     src/pathtracer/gpu_render.h
-    # END UNREVIEWED CLAUDE CODE
     # misc
     src/util/sphere_drawing.h
     src/util/lodepng.h

@@ -14,6 +14,11 @@
 #include <type_traits>
 #include <unordered_map>
 
+// From cuda docs
+#define CUDA_CALL(x) do { if((x) != cudaSuccess) { \
+    printf("Error at %s:%d\n",__FILE__,__LINE__); \
+    exit(1);}} while(0)
+
 namespace CGL
 {
 
@@ -125,6 +130,7 @@ namespace CGL
 
     // Build GPU prim list based on BVH order 
     std::vector<GPUPrimitive_t> GPUprims;
+    std::vector<GPUBSDF_t> GPUbsdfs;
     int nextId = 0;
     std::unordered_map<BSDF *, int> uniqueBSDF;
     GPUprims.reserve(primitives.size());
@@ -142,9 +148,11 @@ namespace CGL
         uniqueBSDF.insert({BSDFp, nextId});
         // Set primitive bsdf id
         gp.bsdf_id = nextId++;
-        // Push to host_bsdf
+        // Convert and push to GPUbsdfs
         // Index should match with id
-        this->host_bsdfs.push_back(BSDFp);
+        GPUBSDF_t gb;
+        BSDFp->createGPU(&gb);
+        GPUbsdfs.push_back(gb);
       }
       else
       {
@@ -153,40 +161,28 @@ namespace CGL
       }
       GPUprims.push_back(gp);
     }
-    cudaError_t error;
-    error = cudaMalloc(&this->primitives, sizeof(GPUPrimitive_t)*GPUprims.size());
-    if(error != cudaSuccess){
-      fprintf(stderr, "cudaMalloc failed in upload\n");
-      exit(1);
-    }
-    error = cudaMemcpy(this->primitives, GPUprims.data(), sizeof(GPUPrimitive_t)*GPUprims.size(), cudaMemcpyHostToDevice);
-    if(error != cudaSuccess){
-      fprintf(stderr, "cudaMemcpy failed in upload\n");
-      exit(1);
-    }
 
+    CUDA_CALL(cudaMalloc(&this->nodes, sizeof(GPUBVHNode_t) * nodes.size()));
+    CUDA_CALL(cudaMemcpy(this->nodes, nodes.data(), sizeof(GPUBVHNode_t) * nodes.size(), cudaMemcpyHostToDevice));
+    this->num_nodes = nodes.size();
+
+    
+    CUDA_CALL(cudaMalloc(&this->primitives, sizeof(GPUPrimitive_t)*GPUprims.size()))
+    CUDA_CALL(cudaMemcpy(this->primitives, GPUprims.data(), sizeof(GPUPrimitive_t)*GPUprims.size(), cudaMemcpyHostToDevice))
+    
     this->num_primitives = GPUprims.size();
 
-    error = cudaMalloc(&this->nodes, sizeof(GPUBVHNode_t) * nodes.size());
-    if (error != cudaSuccess)
-    {
-      fprintf(stderr, "cudaMalloc failed in upload (BVH nodes)\n");
-      exit(1);
-    }
-    error = cudaMemcpy(this->nodes, nodes.data(), sizeof(GPUBVHNode_t) * nodes.size(), cudaMemcpyHostToDevice);
-    if (error != cudaSuccess)
-    {
-      fprintf(stderr, "cudaMemcpy failed in upload (BVH nodes)\n");
-      exit(1);
-    }
-    this->num_nodes = nodes.size();
+    CUDA_CALL(cudaMalloc(&this->bsdfs, sizeof(GPUBSDF_t)*GPUbsdfs.size()))
+    CUDA_CALL(cudaMemcpy(this->bsdfs, GPUbsdfs.data(), sizeof(GPUBSDF_t)*GPUbsdfs.size(), cudaMemcpyHostToDevice))
+
+    this->num_bsdfs = GPUbsdfs.size();
 
     fprintf(stdout, "Uploaded %zu primitives, %zu BVH nodes (max depth %d)\n",
             this->num_primitives, this->num_nodes, builder.max_depth);
   }
 
   // Collect all primitives in scene and upload
-  void GPUScene::upload(const Scene *scene, size_t max_leaf_size)
+  void GPUScene::upload(const Scene *scene)
   {
     std::vector<Primitive *> primitives;
     for (SceneObject *obj : scene->objects)
@@ -195,27 +191,42 @@ namespace CGL
       primitives.reserve(primitives.size() + obj_prims.size());
       primitives.insert(primitives.end(), obj_prims.begin(), obj_prims.end());
     }
-    this->upload(primitives, max_leaf_size);
+    this->upload(primitives);
     for (Primitive* p : primitives) delete p;
+
+    // Lights (after upload(primitives), which calls free())
+    std::vector<GPULight_t> GPUlights;
+    GPUlights.reserve(scene->lights.size());
+    for (SceneLight *l : scene->lights)
+    {
+      GPULight_t gl;
+      l->createGPU(&gl);
+      if (gl.type == GPU_LIGHT_UNKNOWN)
+        fprintf(stderr, "[GPUScene] Unimplemented GPU light!.\n");
+      GPUlights.push_back(gl);
+    }
+    if (!GPUlights.empty())
+    {
+      CUDA_CALL(cudaMalloc(&this->lights, sizeof(GPULight_t)*GPUlights.size()))
+      CUDA_CALL(cudaMemcpy(this->lights, GPUlights.data(), sizeof(GPULight_t)*GPUlights.size(), cudaMemcpyHostToDevice))
+    }
+    this->num_lights = GPUlights.size();
   }
 
   void GPUScene::free()
   {
-    cudaError_t error = cudaFree(this->primitives);
-    if (error != cudaSuccess)
-    {
-      fprintf(stderr, "Calling cudaFree failed at GPUScene::free\n");
-    }
-    error = cudaFree(this->nodes);
-    if (error != cudaSuccess)
-    {
-      fprintf(stderr, "Calling cudaFree failed at GPUScene::free\n");
-    }
+    CUDA_CALL(cudaFree(this->primitives));
+    CUDA_CALL(cudaFree(this->nodes));
+    CUDA_CALL(cudaFree(this->bsdfs));
+    CUDA_CALL(cudaFree(this->lights));
     this->primitives = nullptr;
     this->num_primitives = 0;
     this->nodes = nullptr;
     this->num_nodes = 0;
-    this->host_bsdfs.clear();
+    this->bsdfs = nullptr;
+    this->num_bsdfs = 0;
+    this->lights = nullptr;
+    this->num_lights = 0;
   }
 
 } // namespace CGL

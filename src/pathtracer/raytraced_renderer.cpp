@@ -301,9 +301,16 @@ void RaytracedRenderer::raytrace_gpu() {
   timer.start();
 
   frameBuffer.clear();
+  // Sync render settings
+  // Need to just replace Raytraced Renderer at some point ngl
+  // But then again this is quite literally just stapling on CUDA
+  // So it's okay if its a bit messy
+  gpu_scene->ns_aa = pt->ns_aa;
+  gpu_scene->max_ray_depth = pt->max_ray_depth;
+  gpu_scene->ns_area_light = pt->ns_area_light;
+  gpu_scene->samples_per_batch = pt->samplesPerBatch;
   // TODO: UPDATE GPU RENDERING FUNCTION
-  gpu_render_normals(gpu_scene->view(), camera->to_gpu(),
-                     pt->sampleBuffer.data.data(), (int)w, (int)h);
+  render(gpu_scene->view(), camera->to_gpu(), pt->sampleBuffer.data.data(), (int)w, (int)h);
   pt->write_to_framebuffer(frameBuffer, 0, 0, w, h);
 
   timer.stop();

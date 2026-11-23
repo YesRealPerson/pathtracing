@@ -104,7 +104,7 @@ public:
    * Scene data already uploaded to the GPU. Does NOT take ownership.
    * start_raytracing renders from this (GPU-only).
    */
-  void set_gpu_scene(const GPUScene* gs) { gpu_scene = gs; }
+  void set_gpu_scene(GPUScene* gs) { gpu_scene = gs; }
 
   /**
    * Sets the pathtracer's frame size. If in a running state (VISUALIZE,
@@ -220,7 +220,7 @@ public:
   Camera* camera;       ///< current camera
 
   // GPU //
-  const GPUScene* gpu_scene = nullptr; ///< not owned
+  GPUScene* gpu_scene = nullptr; ///< not owned
 
   // Integration state //
 
