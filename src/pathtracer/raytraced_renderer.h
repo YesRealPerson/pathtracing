@@ -216,13 +216,14 @@ public:
 
   // Configurables //
 
-  State state;          ///< current state
+  std::atomic<State> state; ///< current state (written by the GPU render thread too)
   Scene* scene;         ///< current scene
   Camera* camera;       ///< current camera
 
   // GPU //
   GPUScene* gpu_scene = nullptr; ///< not owned
   GPURenderBuffers gpu_buffers;  ///< owned; device frame buffer + RNG states
+  std::thread gpu_thread;        ///< runs raytrace_gpu(); joined by stop()
 
   // Integration state //
 
@@ -248,7 +249,7 @@ public:
   size_t numWorkerThreads;
   size_t imageTileSize;
 
-  bool continueRaytracing;                  ///< rendering should continue
+  std::atomic<bool> continueRaytracing{false}; ///< rendering should continue (cleared by stop())
   std::vector<std::thread*> workerThreads;  ///< pool of worker threads
   std::atomic<int> workerDoneCount;         ///< worker threads management
   WorkQueue<WorkItem> workQueue;            ///< queue of work for the workers
