@@ -170,7 +170,8 @@ namespace CGL
         for (int i = 0; i < n; i++)
         {
           Vector3D L = sample_L(light, &rng, hit_p, &wi, &dist, &pdf);
-          GPURay i2l = make_gpu_ray(hit_p + EPS_F * wi, wi, 0.f, dist - EPS_F); // origin at hit point, random direction
+          float EPS_F2 = 1e-4f;
+          GPURay i2l = make_gpu_ray(hit_p + EPS_F2 * hit.n, wi, 0.f, dist - EPS_F2); // origin at hit point, random direction
           // Nothign blocking th elight
           if (!has_intersection_scene(scene, i2l))
           {
