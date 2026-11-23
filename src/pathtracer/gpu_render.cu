@@ -19,6 +19,8 @@
       exit(1);                                        \
     }                                                 \
   } while (0)
+// large float offset
+#define EPS_F2 1e-4f
 
 namespace CGL
 {
@@ -114,6 +116,7 @@ namespace CGL
     }
   }
   // Note function signature needs to change if we add other materials
+  // For sample_f too
   __device__ inline Vector3D bsdf_f(GPUBSDF bsdf)
   {
     switch (bsdf.type)
@@ -127,11 +130,86 @@ namespace CGL
     }
   }
 
+  __device__ Vector3D bsdf_sample_f(GPUBSDF bsdf, curandStatePhilox4_32_10_t *rng,
+                                    Vector3D *wi, float *pdf)
+  {
+    Vector3D f = bsdf_f(bsdf);
+    switch (bsdf.type)
+    {
+    case EMISSIVE:
+    case DIFFUSE:
+      *wi = gpu_sample_cosine_hemisphere(rng, pdf);
+      return bsdf_f(bsdf);
+    default:
+      return Vector3D(0.f);
+    }
+  }
+
+  // See bsdf.cpp make_coord_space
+  __device__ void gpu_make_coord_space(Matrix3x3 &o2w, const Vector3D n)
+  {
+    Vector3D z = Vector3D(n.x, n.y, n.z);
+    Vector3D h = z;
+    if (fabsf(h.x) <= fabsf(h.y) && fabsf(h.x) <= fabsf(h.z))
+      h.x = 1.0;
+    else if (fabsf(h.y) <= fabsf(h.x) && fabsf(h.y) <= fabsf(h.z))
+      h.y = 1.0;
+    else
+      h.z = 1.0;
+
+    z.normalize();
+    Vector3D y = cross(h, z);
+    y.normalize();
+    Vector3D x = cross(z, y);
+    x.normalize();
+
+    o2w[0] = x;
+    o2w[1] = y;
+    o2w[2] = z;
+  }
+  // Returns luminance at this point in the scene
+  __device__ Vector3D bounce(GPUSceneView scene, curandStatePhilox4_32_10_t *rng,
+                             GPURay r, GPUIntersect hit)
+  {
+    // hit is garaunteed to be properly filled
+    Vector3D L_out(0.f);
+    // One bounce
+    const Vector3D hit_p = r.o + r.d * hit.t;
+    Vector3D fr = bsdf_f(scene.bsdfs[hit.bsdf_id]);
+    for (int j = 0; j < scene.num_lights; j++)
+    {
+      const GPULight light = scene.lights[j];
+      if (light.type == GPU_LIGHT_UNKNOWN)
+        continue;
+      Vector3D out, wi;
+      float dist, pdf;
+      int n = scene.ns_area_light;
+      if (light.type == GPU_LIGHT_POINT || light.type == GPU_LIGHT_DIRECTIONAL)
+        n = 1;
+      for (int i = 0; i < n; i++)
+      {
+        Vector3D L = sample_L(light, rng, hit_p, &wi, &dist, &pdf);
+        GPURay i2l = make_gpu_ray(hit_p + EPS_F2 * hit.n, wi, 0.f, dist - EPS_F2); // origin at hit point, random direction
+        // Nothign blocking th elight
+        if (!has_intersection_scene(scene, i2l))
+        {
+          // both need to be in object coords
+          float theta = dot(hit.n, wi);
+          if (theta < 0)
+            continue; // light is behind the surface
+          out += fr * L * theta / pdf;
+        }
+      }
+      L_out += out / n;
+    }
+    return L_out;
+  }
   __global__ void render_kernel(
       GPUSceneView scene, GPUCamera cam,
       Vector3D *accum, int w, int h,
       curandStatePhilox4_32_10_t *states)
   {
+    // thread id
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     if (x >= w || y >= h)
@@ -139,51 +217,42 @@ namespace CGL
     int id = y * w + x;
     curandStatePhilox4_32_10_t rng = states[id];
 
-    Vector3D L_out(0.f);
     float xOfst = curand_uniform(&rng);
     float yOfst = curand_uniform(&rng);
     GPURay r = camera_ray(cam, (x + xOfst) / w, (y + yOfst) / h);
+    int depth = scene.max_ray_depth;
+    Vector3D L_out = Vector3D(0.f);
     GPUIntersect hit;
+    Vector3D fr = Vector3D(1.f);
 
-    // Update for new BVHs
-    if (intersect_scene(scene, r, hit))
+    while (depth > 0)
     {
-      // Debug shading
-      // L_out = (hit.t == INFINITY) ? debug_shading(r.d) : normal_shading(hit.n);
+      if (!intersect_scene(scene, r, hit))
+        break;
 
-      // Direct lighting
-      // Zero bounce
-      L_out += scene.bsdfs[hit.bsdf_id].radiance;
-      // One bounce
-      const Vector3D hit_p = r.o + r.d * hit.t;
-      Vector3D fr = bsdf_f(scene.bsdfs[hit.bsdf_id]);
-      for (int j = 0; j < scene.num_lights; j++)
-      {
-        const GPULight light = scene.lights[j];
-        if (light.type == GPU_LIGHT_UNKNOWN)
-          continue;
-        Vector3D out, wi;
-        float dist, pdf;
-        int n = scene.ns_area_light;
-        if (light.type == GPU_LIGHT_POINT || light.type == GPU_LIGHT_DIRECTIONAL)
-          n = 1;
-        for (int i = 0; i < n; i++)
-        {
-          Vector3D L = sample_L(light, &rng, hit_p, &wi, &dist, &pdf);
-          float EPS_F2 = 1e-4f;
-          GPURay i2l = make_gpu_ray(hit_p + EPS_F2 * hit.n, wi, 0.f, dist - EPS_F2); // origin at hit point, random direction
-          // Nothign blocking th elight
-          if (!has_intersection_scene(scene, i2l))
-          {
-            // both need to be in object coords
-            float theta = dot(hit.n, wi);
-            if (theta < 0)
-              continue; // light is behind the surface
-            out += fr * L * theta / pdf;
-          }
-        }
-        L_out += out / n;
-      }
+      if (depth == scene.max_ray_depth) L_out += scene.bsdfs[hit.bsdf_id].radiance;
+      if (scene.bsdfs[hit.bsdf_id].type == EMISSIVE) break;
+
+      // Light at hit point, initial hit has fr of 1
+      L_out += fr * bounce(scene, &rng, r, hit);
+
+      // Change of Basis stuff
+      Matrix3x3 o2w;
+      gpu_make_coord_space(o2w, hit.n);
+      Matrix3x3 w2o = o2w.T();
+
+      Vector3D hit_p = r.o + r.d * hit.t;
+      Vector3D w_out = w2o * (-r.d);
+
+      // Setup for next iter
+      Vector3D wi;
+      float pdf;
+      Vector3D nextf = bsdf_sample_f(scene.bsdfs[hit.bsdf_id], &rng, &wi, &pdf);
+      Vector3D wiw = o2w * wi;
+      float theta = dot(hit.n, wiw);
+      fr = fr* nextf * theta / pdf;
+      r = make_gpu_ray(hit_p + EPS_F2 * wiw, wiw, 0.f, INF_F);
+      depth--;
     }
     accum[id] += L_out;
     states[id] = rng;
@@ -254,7 +323,7 @@ namespace CGL
     if (!buf.states || !buf.d_out || scene.num_nodes == 0)
       return;
     render_kernel<<<grid_for(buf.w, buf.h), kBlock>>>(scene, cam, buf.d_out,
-                                                       buf.w, buf.h, buf.states);
+                                                      buf.w, buf.h, buf.states);
     CUDA_CALL(cudaGetLastError());
     CUDA_CALL(cudaDeviceSynchronize());
   }
