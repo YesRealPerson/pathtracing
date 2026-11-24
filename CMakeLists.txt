@@ -90,8 +90,12 @@ set(APPLICATION_3_2_SOURCE
     src/scene/collada/polymesh_info.cpp
     src/scene/collada/material_info.cpp
 
+    # glTF 2.0 loader (fills the same SceneInfo as the COLLADA parser)
+    src/scene/gltf/gltf_loader.cpp
+
     # Dynamic Scene
     src/scene/gl_scene/mesh.cpp
+    src/scene/gl_scene/tri_mesh.cpp
     src/scene/gl_scene/scene.cpp
     src/scene/gl_scene/sphere.cpp
 
@@ -131,6 +135,11 @@ set(APPLICATION_HEADERS
     src/scene/collada/material_info.h
     src/scene/collada/polymesh_info.h
     src/scene/collada/sphere_info.h
+    src/scene/collada/trimesh_info.h
+    # glTF loader
+    src/scene/gltf/cgltf.h
+    src/scene/gltf/stb_image.h
+    src/scene/gltf/gltf_loader.h
     # Dynamic Scene
     src/scene/gl_scene/ambient_light.h
     src/scene/gl_scene/area_light.h
@@ -144,6 +153,7 @@ set(APPLICATION_HEADERS
     src/scene/gl_scene/scene.h
     src/scene/gl_scene/sphere.h
     src/scene/gl_scene/spot_light.h
+    src/scene/gl_scene/tri_mesh.h
     # Scene Object & Structure
     src/scene/aggregate.h
     src/scene/bbox.h
@@ -154,6 +164,7 @@ set(APPLICATION_HEADERS
     src/scene/primitive.h
     src/scene/scene.h
     src/scene/sphere.h
+    src/scene/texture.h
     src/scene/triangle.h
     # MeshEdit
     src/util/halfEdgeMesh.h

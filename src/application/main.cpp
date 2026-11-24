@@ -16,6 +16,7 @@ typedef uint32_t gid_t;
 #include <unistd.h>
 #endif
 #include "pathtracer_launcher_gui.h"
+#include "scene/gltf/gltf_loader.h"
 
 using namespace std;
 using namespace CGL;
@@ -33,6 +34,10 @@ void usage(const char *binaryName) {
   printf("  -e  <PATH>       Path to environment map\n");
   printf("  -b  <FLOAT>      The size of the aperture\n");
   printf("  -d  <FLOAT>      The focal distance\n");
+  printf("  -x  <FLOAT>      Exposure in stops (image scaled by 2^x, default 0)\n");
+  printf("  -T               Filmic (ACES) tone mapping instead of clipping\n");
+  printf("  -W  <WHITE>      Highlight compression: brightness WHITE (after\n"
+         "                   exposure) maps to white, hue kept. 0 = off\n");
   printf("  -f  <FILENAME>   Image (.png) file to save output to in windowless "
          "mode\n");
   printf(
@@ -123,9 +128,18 @@ int main(int argc, char **argv) {
       config.pathtracer_accumulate_bounces = settings.pathtracer_accumulate_bounces;
     }
   } else {
-    while ((opt = getopt(argc, argv, "s:l:t:m:o:e:h:H:f:r:c:b:d:a:p:")) !=
+    while ((opt = getopt(argc, argv, "s:l:t:m:o:e:h:H:f:r:c:b:d:a:p:x:TW:")) !=
            -1) { // for each option...
       switch (opt) {
+      case 'x':
+        config.pathtracer_exposure_ev = (float)atof(optarg);
+        break;
+      case 'T':
+        config.pathtracer_filmic = true;
+        break;
+      case 'W':
+        config.pathtracer_white = (float)atof(optarg);
+        break;
       case 'f':
         write_to_file = true;
         output_file_name = string(optarg);
@@ -195,16 +209,28 @@ int main(int argc, char **argv) {
     sceneFilePath = argv[optind];
   }
   msg("Input scene file: " << sceneFilePath);
-  string sceneFile = sceneFilePath.substr(sceneFilePath.find_last_of('/') + 1);
-  sceneFile = sceneFile.substr(0, sceneFile.find(".dae"));
+  string sceneFile = sceneFilePath.substr(sceneFilePath.find_last_of("/\\") + 1);
+  sceneFile = sceneFile.substr(0, sceneFile.find_last_of('.'));
   config.pathtracer_filename = sceneFile;
 
-  // parse scene
+  // parse scene: .glb / .gltf go through the glTF loader, everything else is
+  // treated as COLLADA. Both fill the same SceneInfo.
+  const bool is_gltf = GLTF::is_gltf_path(sceneFilePath);
   Collada::SceneInfo *sceneInfo = new Collada::SceneInfo();
-  if (Collada::ColladaParser::load(sceneFilePath.c_str(), sceneInfo) < 0) {
+  int load_result = is_gltf
+      ? GLTF::load(sceneFilePath.c_str(), sceneInfo)
+      : Collada::ColladaParser::load(sceneFilePath.c_str(), sceneInfo);
+  if (load_result < 0) {
+    if (is_gltf) GLTF::release(sceneInfo);
     delete sceneInfo;
     exit(0);
   }
+  // The GL scene copies everything it needs out of sceneInfo. For glTF free
+  // the parsed geometry right away; on big scenes it's a full extra copy.
+  auto free_scene_info = [&]() {
+    if (is_gltf) GLTF::release(sceneInfo);
+    delete sceneInfo;
+  };
 
   // create application
   Application *app = new Application(config, !write_to_file);
@@ -215,7 +241,7 @@ int main(int argc, char **argv) {
   if (write_to_file) {
     app->init();
     app->load(sceneInfo);
-    delete sceneInfo;
+    free_scene_info();
 
     if (w && h)
       app->resize(w, h);
@@ -239,7 +265,7 @@ int main(int argc, char **argv) {
   // load scene
   app->load(sceneInfo);
 
-  delete sceneInfo;
+  free_scene_info();
 
   if (w && h)
     viewer.resize(w, h);

@@ -121,6 +121,22 @@ class BSDF {
   const HDRImageBuffer* reflectanceMap;
   const HDRImageBuffer* normalMap;
 
+  // GPU-only extras, set by the glTF loader and copied into GPUBSDF by
+  // GPUScene::upload. base_color_tex multiplies the reflectance and
+  // emission_tex multiplies the emission (index into the scene's TextureSet).
+  GPUTexRef base_color_tex = gpu_no_texture();
+  GPUTexRef emission_tex = gpu_no_texture();
+  // Emission added on top of a non-emissive BSDF (e.g. a diffuse screen whose
+  // emissive texture lights up only parts of it).
+  Vector3D gpu_emission;
+  // Emission lights the scene through indirect bounces (see GPUBSDF).
+  bool gpu_emission_indirect = false;
+  // glTF alphaMode (GPU_ALPHA_*): coverage = gpu_alpha_factor * base_color_tex.a.
+  // Cut-out hits are skipped during traversal (see alpha_skips_hit).
+  int gpu_alpha_mode = GPU_ALPHA_OPAQUE;
+  float gpu_alpha_cutoff = 0.5f;
+  float gpu_alpha_factor = 1.f;
+
 }; // class BSDF
 
 /**

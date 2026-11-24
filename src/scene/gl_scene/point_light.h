@@ -19,11 +19,13 @@ class PointLight : public SceneLight {
 
     this->spectrum = light_info.spectrum;
     this->position = (transform * Vector4D(light_info.position, 1)).to3D();
+    this->inverse_square = light_info.inverse_square;
+    this->range = light_info.range;
   }
 
   SceneObjects::SceneLight *get_static_light() const {
-    SceneObjects::PointLight *l = 
-      new SceneObjects::PointLight(spectrum, position);
+    SceneObjects::PointLight *l =
+      new SceneObjects::PointLight(spectrum, position, inverse_square, range);
     return l;
   }
 
@@ -40,6 +42,8 @@ class PointLight : public SceneLight {
 
   Vector3D spectrum;
   Vector3D position;
+  bool inverse_square = false;
+  float range = 0;
 
 };
 

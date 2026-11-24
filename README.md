@@ -79,6 +79,40 @@ GPU versions for the following
 | [gpu_scene.cu:120-195](src/pathtracer/gpu_scene.cu#L120-L195) | unreviewed, to be deleted | `upload_dummy_bvh()`: copies primitives back to compute scene bounds, uploads one leaf covering every primitive. |
 | [gpu_intersect.cuh:100-152](src/pathtracer/gpu_intersect.cuh#L100-L152) | unreviewed, to be deleted | `intersect_scene()` / `has_intersection_scene()`: brute-force loop over every leaf in the node array, no culling. `render_kernel` uses both. |
 
+## glTF / .glb scenes
+
+`.glb` and `.gltf` files now load alongside `.dae`; the loader is picked by
+file extension:
+
+```
+cd build
+./pathtracer.exe -f ../out/hideout.png -r 1504 800 -s 512 -l 4 -m 6 -x 2 -T ../glb/hideout_marathon_baked.glb
+```
+
+- **Loading:** meshes skip the half-edge mesh, so messy geometry loads.
+  Base-color and emissive textures work, including `KHR_texture_transform`.
+  Point, spot and sun lights use physical units (÷683 lm/W, matching Blender),
+  and the file's camera and FOV are kept.
+- **GPU memory:** triangles are now 16 B indexed instead of 80 B. On a
+  3.9M-triangle scene, host RAM dropped from 2.2 GB to 0.56 GB.
+- **New options:** `-x <stops>` for exposure, `-T` for a filmic tone curve,
+  and `PT_DEBUG_ALBEDO=1` for a texture debug view.
+- **Renderer fixes for all scenes:** double-sided shading, NaN black pixels,
+  and adaptive sampling stopping at black.
+- **Still diffuse-only on the GPU:** mirror and glass render black.
+- **Hideout:** the plain export dropped the decal textures. Use
+  `glb/hideout_marathon_baked.glb` instead, made by
+  `tools/blender_bake_for_gltf.py`, which bakes every material to textures in
+  Blender, including decal transparency, which the renderer now supports
+  (glTF `alphaMode`), and the area lights (written to glTF extras, which the
+  loader reads). Decals, cut-outs and the cyan fill light now render.
+  Use `-x 2`. Still missing vs. the
+  reference: fog and the glossy floor. Its textures take about 2.8 GB of GPU
+  memory.
+
+Details, verification against Blender, and next steps:
+[src/scene/gltf/README.md](src/scene/gltf/README.md).
+
 ## Depreciated
 `raytrace_tile` / `worker_thread` are still defined but unused
 
@@ -93,7 +127,7 @@ GPU versions for the following
 | [raytraced_renderer.cpp:317](src/pathtracer/raytraced_renderer.cpp#L317) | Ray count metric. |
 
 Not yet on the GPU:
-- Spot, sphere, mesh and environment lights upload as `GPU_LIGHT_UNKNOWN` and `render_kernel` skips them. Rays that miss return black.
+- Sphere, mesh and environment lights upload as `GPU_LIGHT_UNKNOWN` and `render_kernel` skips them (spot lights are now `GPU_LIGHT_SPOT`). Rays that miss return black.
 - Only `EMISSIVE` and `DIFFUSE` BSDFs exist on the GPU (`bsdf_f` returns 0 for anything else).
 
 ## Minor issues (not blocking)

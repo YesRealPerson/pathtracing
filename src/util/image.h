@@ -180,18 +180,40 @@ struct HDRImageBuffer {
   /**
    * Convert the given tile of the buffer to color.
    */
-  void toColor(ImageBuffer& target, size_t x0, size_t y0, size_t x1, size_t y1) {
+  // scale: extra linear exposure multiplier (the -x option, 2^stops).
+  // filmic: compress highlights with the ACES filmic curve (the -T option)
+  // instead of clipping them; roughly what Blender's view transforms do.
+  void toColor(ImageBuffer& target, size_t x0, size_t y0, size_t x1, size_t y1,
+               float scale = 1.0f, bool filmic = false, float white = 0.0f) {
 
     float gamma = 2.2f;
     float level = 1.0f;
     float one_over_gamma = 1.0f / gamma;
-    float exposure = sqrt(pow(2,level));
+    float exposure = sqrt(pow(2,level)) * scale;
+    // Narkowicz's fit of the ACES filmic curve (maps [0, inf) to [0, 1)).
+    auto aces = [](float v) {
+      v = std::max(v, 0.0f);
+      return (v * (2.51f * v + 0.03f)) / (v * (2.43f * v + 0.59f) + 0.14f);
+    };
     for (size_t y = y0; y < y1; ++y) {
       for (size_t x = x0; x < x1; ++x) {
         const Vector3D& s = data[x + y * w];
-        float r = std::max(0.0f, std::min(powf(s.r * exposure, one_over_gamma), 1.0f));
-        float g = std::max(0.0f, std::min(powf(s.g * exposure, one_over_gamma), 1.0f));
-        float b = std::max(0.0f, std::min(powf(s.b * exposure, one_over_gamma), 1.0f));
+        float lr = s.r * exposure, lg = s.g * exposure, lb = s.b * exposure;
+        if (white > 0.0f) {
+          // Highlight compression (extended Reinhard on luminance): Y -> Y (1 +
+          // Y / W^2) / (1 + Y). Dark values barely change, Y = W maps to 1,
+          // brighter values roll off. RGB is scaled by the same factor, so
+          // bright colored light keeps its hue instead of going white.
+          float Y = 0.2126f * lr + 0.7152f * lg + 0.0722f * lb;
+          if (Y > 0.0f) {
+            float k = (1.0f + Y / (white * white)) / (1.0f + Y);
+            lr *= k; lg *= k; lb *= k;
+          }
+        }
+        if (filmic) { lr = aces(lr); lg = aces(lg); lb = aces(lb); }
+        float r = std::max(0.0f, std::min(powf(lr, one_over_gamma), 1.0f));
+        float g = std::max(0.0f, std::min(powf(lg, one_over_gamma), 1.0f));
+        float b = std::max(0.0f, std::min(powf(lb, one_over_gamma), 1.0f));
         target.update_pixel(Color(r, g, b), x, y);
       }
     }

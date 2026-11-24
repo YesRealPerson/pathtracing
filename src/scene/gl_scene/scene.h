@@ -224,6 +224,9 @@ class Scene {
   std::vector<SceneObject*> objects;
   std::vector<SceneLight*> lights;
 
+  // Textures for the static scene (glTF); passed through get_static_scene().
+  std::shared_ptr<TextureSet> textures;
+
  private:
   SelectionInfo selectionInfo;
   int selectionIdx, hoverIdx;

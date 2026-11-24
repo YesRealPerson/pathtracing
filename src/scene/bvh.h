@@ -132,7 +132,6 @@ class BVHAccel : public Aggregate {
    */
   void drawOutline(const Color& c, float alpha) const { }
   void drawOutline(BVHNode *node, const Color& c, float alpha) const;
-  void createGPU(GPUPrimitive_t* prim) const { return; }
   mutable unsigned long long total_rays, total_isects;
 
 private:

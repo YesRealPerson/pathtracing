@@ -401,7 +401,13 @@ bool PathtracerLauncherGUI::file_exists(const std::string &name) {
   return (stat(name.c_str(), &buffer) == 0);
 }
 bool PathtracerLauncherGUI::dae_exists(const std::string &name) {
-  return file_exists(name) && name.find(".dae") != std::string::npos;
+  // Accepts COLLADA (.dae) and glTF (.glb / .gltf) scenes.
+  if (!file_exists(name)) return false;
+  size_t dot = name.find_last_of('.');
+  if (dot == std::string::npos) return false;
+  std::string ext = name.substr(dot + 1);
+  for (char &ch : ext) ch = (char)tolower((unsigned char)ch);
+  return ext == "dae" || ext == "glb" || ext == "gltf";
 }
 void PathtracerLauncherGUI::GUISettings::serialize(
     const std::string &a_file_path) {

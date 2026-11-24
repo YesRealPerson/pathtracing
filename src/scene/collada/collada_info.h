@@ -1,10 +1,12 @@
 #ifndef CGL_COLLADA_COLLADAINFO_H
 #define CGL_COLLADA_COLLADAINFO_H
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "CGL/matrix4x4.h"
+#include "scene/texture.h"
 
 using std::string;
 using std::vector;
@@ -27,7 +29,8 @@ class Instance {
     LIGHT,
     SPHERE,
     POLYMESH,
-    MATERIAL
+    MATERIAL,
+    TRIMESH   ///< flat indexed triangle mesh (glTF loader), see trimesh_info.h
   };
 
   Type type;  	 ///< type of instance
@@ -55,6 +58,7 @@ struct Node {
 */
 struct SceneInfo {
   vector<Node> nodes;
+  std::shared_ptr<TextureSet> textures;  ///< glTF only; null for COLLADA
 };
 
 } // namespace Collada

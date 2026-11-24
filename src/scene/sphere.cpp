@@ -51,11 +51,9 @@ void Sphere::drawOutline(const Color &c, float alpha) const {
   // Misc::draw_sphere_opengl(o, r, c);
 }
 
-void Sphere::createGPU(GPUPrimitive_t* prim) const {
-  prim->a = this->o;
-  prim->b.x = this->r;
-  prim->b.y = this->r2;
-  prim->type = GPU_PRIM_SPHERE;
+void Sphere::createGPU(GPUSphere_t* sphere) const {
+  sphere->o = this->o;
+  sphere->r = (float)this->r;
 }
 
 } // namespace SceneObjects

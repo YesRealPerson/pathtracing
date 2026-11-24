@@ -1,10 +1,30 @@
 #ifndef CGL_STATICSCENE_OBJECT_H
 #define CGL_STATICSCENE_OBJECT_H
 
+#include <cstdint>
+#include <memory>
+#include <vector>
+
+#include "CGL/vector2D.h"
 #include "util/halfEdgeMesh.h"
 #include "scene.h"
 
 namespace CGL { namespace SceneObjects {
+
+/**
+ * World-space indexed triangle data. Immutable once built and shared (via
+ * shared_ptr) between the OpenGL preview object and every static Mesh made
+ * from it, so a mesh's vertices exist once on the host no matter how often
+ * the static scene is rebuilt.
+ */
+struct MeshData {
+  std::vector<Vector3D> positions;
+  std::vector<Vector3D> normals;    ///< same length as positions
+  std::vector<Vector2D> uvs;        ///< same length as positions, or empty
+  std::vector<uint32_t> indices;    ///< 3 per triangle
+
+  size_t num_triangles() const { return indices.size() / 3; }
+};
 
 /**
  * A triangle mesh object.
@@ -21,8 +41,17 @@ class Mesh : public SceneObject {
   Mesh(const HalfedgeMesh& mesh, BSDF* bsdf);
 
   /**
+   * Constructor.
+   * Share already-built world-space triangle data (no copy). Used by
+   * GLScene::TriMesh (glTF scenes), which skips the halfedge mesh entirely.
+   */
+  Mesh(std::shared_ptr<const MeshData> data, BSDF* bsdf);
+
+  /**
    * Get all the primitives (Triangle) in the mesh.
    * Note that Triangle reference the mesh for the actual data.
+   * Only the CPU BVH (visualizer / autofocus) uses this; the GPU upload reads
+   * data() directly instead of allocating one Triangle per triangle.
    * \return all the primitives in the mesh
    */
   vector<Primitive*> get_primitives() const;
@@ -33,14 +62,17 @@ class Mesh : public SceneObject {
    */
   BSDF* get_bsdf() const;
 
-  Vector3D *positions;  ///< position array
-  Vector3D *normals;    ///< normal array
+  /** The mesh's triangle data (world space). */
+  const MeshData& data() const { return *mesh_data; }
+
+  const Vector3D *positions;  ///< == data().positions.data()
+  const Vector3D *normals;    ///< == data().normals.data()
 
  private:
 
   BSDF* bsdf; ///< BSDF of surface material
 
-  vector<size_t> indices;  ///< triangles defined by indices
+  std::shared_ptr<const MeshData> mesh_data;
 
 };
 

@@ -166,7 +166,10 @@ SceneObjects::Scene *Scene::get_static_scene() {
     staticLights.push_back(light->get_static_light());
   }
 
-  return new SceneObjects::Scene(staticObjects, staticLights);
+  SceneObjects::Scene* staticScene =
+      new SceneObjects::Scene(staticObjects, staticLights);
+  staticScene->textures = textures;
+  return staticScene;
 }
 
 

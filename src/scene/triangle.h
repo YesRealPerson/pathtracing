@@ -72,7 +72,6 @@ public:
    * Draw outline with OpenGL (for visualizer)
    */
   void drawOutline(const Color& c, float alpha) const;
-  void createGPU(GPUPrimitive_t* prim) const;
 
   Vector3D p1, p2, p3;
   Vector3D n1, n2, n3;

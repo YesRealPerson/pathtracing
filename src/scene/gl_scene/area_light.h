@@ -15,6 +15,13 @@ class AreaLight : public SceneLight {
             const Matrix4x4& transform) {
 
     this->spectrum = light_info.spectrum;
+    if (light_info.explicit_area) {  // glTF: already world space
+      position = light_info.position;
+      direction = light_info.direction;
+      dim_x = light_info.dim_x;
+      dim_y = light_info.dim_y;
+      return;
+    }
     this->position = (transform * Vector4D(light_info.position, 1)).to3D();
     this->direction = (transform * Vector4D(light_info.direction, 1)).to3D() - position;
     this->direction.normalize();

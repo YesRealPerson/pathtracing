@@ -80,12 +80,36 @@ namespace CGL
     switch (L.type)
     {
     case GPU_LIGHT_POINT:
+    case GPU_LIGHT_SPOT:
     {
       Vector3D d = L.position - p;
-      *distToLight = d.norm();
+      float d2 = d.norm2();
+      *distToLight = sqrtf(d2);
       *wi = d / *distToLight;
       *pdf = 1.f;
-      return L.radiance;
+      Vector3D rad = L.radiance;
+      if (L.inv_square)
+      {
+        // radiance holds intensity (glTF candela * color): E = I / d^2,
+        // windowed to zero at `range` as the glTF spec recommends.
+        float att = 1.f / fmaxf(d2, 1e-8f);
+        if (L.range > 0.f)
+        {
+          float q = d2 / (L.range * L.range); // (d / range)^2
+          float w = fminf(fmaxf(1.f - q * q, 0.f), 1.f);
+          att *= w * w;
+        }
+        rad = rad * att;
+      }
+      if (L.type == GPU_LIGHT_SPOT)
+      {
+        // glTF smooth cone falloff between the inner and outer angle
+        float cd = -dot(L.direction, *wi);
+        float t = (cd - L.cos_outer) / fmaxf(L.cos_inner - L.cos_outer, 1e-4f);
+        t = fminf(fmaxf(t, 0.f), 1.f);
+        rad = rad * (t * t);
+      }
+      return rad;
     }
     case GPU_LIGHT_DIRECTIONAL:
     {
@@ -121,34 +145,83 @@ namespace CGL
       return Vector3D(0.f);
     }
   }
-  // Note function signature needs to change if we add other materials
-  // For sample_f too
-  __device__ inline Vector3D bsdf_f(GPUBSDF bsdf)
+  // ---- Textures --------------------------------------------------------------
+
+  // sRGB byte -> linear float, filled by init_srgb_lut().
+  __constant__ float c_srgb_to_linear[256];
+
+  __device__ inline Vector3D texel_linear(uint32_t t)
   {
-    switch (bsdf.type)
-    {
-    case EMISSIVE:
-      return Vector3D(0.f);
-    case DIFFUSE:
-      return bsdf.reflectance / PI_F;
-    default:
-      return Vector3D(0.f);
-    }
+    return Vector3D(c_srgb_to_linear[t & 0xff],
+                    c_srgb_to_linear[(t >> 8) & 0xff],
+                    c_srgb_to_linear[(t >> 16) & 0xff]);
   }
 
-  __device__ Vector3D bsdf_sample_f(GPUBSDF bsdf, curandStatePhilox4_32_10_t *rng,
+  // Bilinear lookup with the slot's KHR_texture_transform applied. Filtering
+  // happens in linear space. (No mipmaps: the many samples per pixel already
+  // average the texture over each pixel's footprint.)
+  __device__ inline Vector3D sample_texture(const GPUSceneView &scene, const GPUTexRef &ref,
+                                            float u, float v)
+  {
+    const GPUTexture &tex = scene.textures[ref.tex];
+    float tu = ref.m[0] * u + ref.m[1] * v + ref.m[2];
+    float tv = ref.m[3] * u + ref.m[4] * v + ref.m[5];
+    if (!isfinite(tu) || !isfinite(tv))
+      return Vector3D(1.f);
+
+    float x = tu * tex.w - 0.5f, y = tv * tex.h - 0.5f;
+    float fx = floorf(x), fy = floorf(y);
+    float ax = x - fx, ay = y - fy;
+    // keep the integer math in range for huge (tiled) UVs
+    int ix = (int)fmodf(fx, (float)(tex.w * 1024)), iy = (int)fmodf(fy, (float)(tex.h * 1024));
+    int x0 = wrap_texel(ix, tex.w, tex.wrap_s), x1 = wrap_texel(ix + 1, tex.w, tex.wrap_s);
+    int y0 = wrap_texel(iy, tex.h, tex.wrap_t), y1 = wrap_texel(iy + 1, tex.h, tex.wrap_t);
+
+    const uint32_t *px = scene.texels + tex.offset;
+    Vector3D c00 = texel_linear(px[(size_t)y0 * tex.w + x0]);
+    Vector3D c10 = texel_linear(px[(size_t)y0 * tex.w + x1]);
+    Vector3D c01 = texel_linear(px[(size_t)y1 * tex.w + x0]);
+    Vector3D c11 = texel_linear(px[(size_t)y1 * tex.w + x1]);
+    return (c00 * (1.f - ax) + c10 * ax) * (1.f - ay) + (c01 * (1.f - ax) + c11 * ax) * ay;
+  }
+
+  // ---- Materials -------------------------------------------------------------
+
+  // A BSDF evaluated at one hit point (textures applied).
+  struct GPUShade
+  {
+    Vector3D albedo;   // diffuse reflectance
+    Vector3D emission; // emitted radiance
+    bool emitter_only; // EMISSIVE: the path stops here
+    bool emit_indirect; // emission also counts on bounce rays
+  };
+
+  __device__ inline GPUShade shade_hit(const GPUSceneView &scene, const GPUIntersect &hit)
+  {
+    const GPUBSDF &b = scene.bsdfs[hit.bsdf_id];
+    GPUShade s;
+    s.emitter_only = b.type == EMISSIVE;
+    s.emit_indirect = b.emit_indirect != 0;
+    s.albedo = s.emitter_only ? Vector3D(0.f) : b.reflectance;
+    s.emission = b.radiance;
+    if (b.base_tex.tex >= 0 && !s.emitter_only)
+      s.albedo = s.albedo * sample_texture(scene, b.base_tex, hit.u, hit.v);
+    if (b.emit_tex.tex >= 0)
+      s.emission = s.emission * sample_texture(scene, b.emit_tex, hit.u, hit.v);
+    return s;
+  }
+
+  // Diffuse only (emitters have zero albedo, so this is 0 for them).
+  __device__ inline Vector3D bsdf_f(const GPUShade &s)
+  {
+    return s.albedo / PI_F;
+  }
+
+  __device__ Vector3D bsdf_sample_f(const GPUShade &s, curandStatePhilox4_32_10_t *rng,
                                     Vector3D *wi, float *pdf)
   {
-    Vector3D f = bsdf_f(bsdf);
-    switch (bsdf.type)
-    {
-    case EMISSIVE:
-    case DIFFUSE:
-      *wi = gpu_sample_cosine_hemisphere(rng, pdf);
-      return bsdf_f(bsdf);
-    default:
-      return Vector3D(0.f);
-    }
+    *wi = gpu_sample_cosine_hemisphere(rng, pdf);
+    return bsdf_f(s);
   }
 
   // See bsdf.cpp make_coord_space
@@ -175,13 +248,12 @@ namespace CGL
   }
   // Returns luminance at this point in the scene
   __device__ Vector3D bounce(GPUSceneView scene, curandStatePhilox4_32_10_t *rng,
-                             GPURay r, GPUIntersect hit)
+                             GPURay r, GPUIntersect hit, Vector3D fr)
   {
-    // hit is garaunteed to be properly filled
+    // hit is garaunteed to be properly filled; fr is the BSDF value there
     Vector3D L_out(0.f);
     // One bounce
     const Vector3D hit_p = r.o + r.d * hit.t;
-    Vector3D fr = bsdf_f(scene.bsdfs[hit.bsdf_id]);
     for (int j = 0; j < scene.num_lights; j++)
     {
       const GPULight light = scene.lights[j];
@@ -190,21 +262,22 @@ namespace CGL
       Vector3D out, wi;
       float dist, pdf;
       int n = scene.ns_area_light;
-      if (light.type == GPU_LIGHT_POINT || light.type == GPU_LIGHT_DIRECTIONAL)
+      if (light.type == GPU_LIGHT_POINT || light.type == GPU_LIGHT_DIRECTIONAL ||
+          light.type == GPU_LIGHT_SPOT)
         n = 1;
       for (int i = 0; i < n; i++)
       {
         Vector3D L = sample_L(light, rng, hit_p, &wi, &dist, &pdf);
-        GPURay i2l = make_gpu_ray(hit_p + EPS_F2 * hit.n, wi, 0.f, dist - EPS_F2); // origin at hit point, random direction
+        // light is behind the surface (geometric check stops light leaking
+        // through thin double-sided walls; shading check for the cosine)
+        float theta = dot(hit.n, wi);
+        if (theta <= 0.f || dot(hit.ng, wi) <= 0.f)
+          continue;
+        // Offset along the geometric normal, on the side the ray came from
+        GPURay i2l = make_gpu_ray(hit_p + EPS_F2 * hit.ng, wi, 0.f, dist - EPS_F2);
         // Nothign blocking th elight
         if (!has_intersection_scene(scene, i2l))
-        {
-          // both need to be in object coords
-          float theta = dot(hit.n, wi);
-          if (theta < 0)
-            continue; // light is behind the surface
           out += fr * L * theta / pdf;
-        }
       }
       L_out += out / n;
     }
@@ -239,9 +312,17 @@ namespace CGL
       if (!intersect_scene(scene, r, hit))
         break;
 
+      const GPUShade shade = shade_hit(scene, hit);
+      if (scene.debug_albedo)
+      {
+        L_out = shade.albedo; // texture debugging: base color, no lighting
+        break;
+      }
       if (depth == scene.max_ray_depth)
-        L_out += scene.bsdfs[hit.bsdf_id].radiance;
-      if (scene.bsdfs[hit.bsdf_id].type == EMISSIVE)
+        L_out += shade.emission;          // seen directly (fr == 1 here)
+      else if (shade.emit_indirect)
+        L_out += fr * shade.emission;     // reached by a bounce: lights the scene
+      if (shade.emitter_only)
         break;
 
       // Russian Roulette
@@ -254,24 +335,27 @@ namespace CGL
       }
 
       // Light at hit point, initial hit has fr of 1
-      L_out += fr * bounce(scene, &rng, r, hit);
+      L_out += fr * bounce(scene, &rng, r, hit, bsdf_f(shade));
 
       // Change of Basis stuff
       Matrix3x3 o2w;
       gpu_make_coord_space(o2w, hit.n);
-      Matrix3x3 w2o = o2w.T();
 
       Vector3D hit_p = r.o + r.d * hit.t;
-      Vector3D w_out = w2o * (-r.d);
 
       // Setup for next iter
       Vector3D wi;
       float pdf;
-      Vector3D nextf = bsdf_sample_f(scene.bsdfs[hit.bsdf_id], &rng, &wi, &pdf);
+      Vector3D nextf = bsdf_sample_f(shade, &rng, &wi, &pdf);
       Vector3D wiw = o2w * wi;
       float theta = dot(hit.n, wiw);
+      // pdf == 0 happens when curand_uniform returns exactly 1.0 (grazing
+      // sample); 0 / 0 would put a NaN (black pixel) in the accumulator.
+      // A direction below the actual surface would go through it.
+      if (pdf <= 0.f || dot(hit.ng, wiw) <= 0.f)
+        break;
       fr = fr *nextf *theta / pdf;
-      r = make_gpu_ray(hit_p + EPS_F2 * wiw, wiw, 0.f, INF_F);
+      r = make_gpu_ray(hit_p + EPS_F2 * hit.ng, wiw, 0.f, INF_F);
       depth--;
     }
     accum[id] += L_out;
@@ -288,7 +372,14 @@ namespace CGL
       s = sqrtf(s);
       float mu = s1 / n;
       float I = 1.96f * (s / sqrt(n));
-      if (I <= scene.maxTolerance * mu)
+      // All samples zero so far: the CI test is 0 <= 0 and would stop a pixel
+      // whose first batch was unlucky (thin geometry, partial coverage) at
+      // black. Use the "rule of three" instead: after n zero samples the 95%
+      // upper bound on the chance of a nonzero sample is 3/n, so stop once
+      // that is within the tolerance. Truly black pixels still stop early.
+      bool done = mu > 0.f ? I <= scene.maxTolerance * mu
+                           : n * scene.maxTolerance >= 3.f;
+      if (done)
       {
         converge[id] = true;
       }
@@ -338,10 +429,27 @@ namespace CGL
     buf.w = buf.h = 0;
   }
 
+  // Fills c_srgb_to_linear (once per process).
+  static void init_srgb_lut()
+  {
+    static bool done = false;
+    if (done)
+      return;
+    float lut[256];
+    for (int i = 0; i < 256; i++)
+    {
+      float c = i / 255.f;
+      lut[i] = c <= 0.04045f ? c / 12.92f : powf((c + 0.055f) / 1.055f, 2.4f);
+    }
+    CUDA_CALL(cudaMemcpyToSymbol(c_srgb_to_linear, lut, sizeof(lut)));
+    done = true;
+  }
+
   void render_init(GPURenderBuffers &buf, int w, int h)
   {
     if (w <= 0 || h <= 0)
       return;
+    init_srgb_lut();
     // Already set up at this size: keep the RNG streams going, just reset
     // the accumulator for a fresh render
     size_t pixels = (size_t)w * h;

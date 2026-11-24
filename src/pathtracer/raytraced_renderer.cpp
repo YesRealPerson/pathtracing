@@ -115,7 +115,8 @@ void RaytracedRenderer::set_scene(Scene *scene) {
   if (this->scene != nullptr) {
     delete scene;
     delete bvh;
-    selectionHistory.pop();
+    bvh = NULL;
+    while (!selectionHistory.empty()) selectionHistory.pop();
   }
 
   if (pt->envLight != nullptr) {
@@ -123,7 +124,8 @@ void RaytracedRenderer::set_scene(Scene *scene) {
   }
 
   this->scene = scene;
-  build_accel();
+  // The CPU BVH is only needed by the BVH visualizer and autofocus (rendering
+  // is on the GPU), so it is built on first use: see ensure_accel().
 
   if (has_valid_configuration()) {
     state = READY;
@@ -244,7 +246,7 @@ void RaytracedRenderer::clear() {
   bvh = NULL;
   scene = NULL;
   camera = NULL;
-  selectionHistory.pop();
+  while (!selectionHistory.empty()) selectionHistory.pop();
   frameBuffer.resize(0, 0);
   state = INIT;
   render_cell = false;
@@ -259,7 +261,12 @@ void RaytracedRenderer::start_visualizing() {
   if (state != READY) {
     return;
   }
+  ensure_accel();
   state = VISUALIZE;
+}
+
+void RaytracedRenderer::ensure_accel() {
+  if (!bvh && scene) build_accel();
 }
 
 /**
@@ -317,17 +324,35 @@ void RaytracedRenderer::raytrace_gpu() {
   gpu_scene->ns_area_light = pt->ns_area_light;
   gpu_scene->samples_per_batch = pt->samplesPerBatch;
   gpu_scene->maxTolerance = (float)pt->maxTolerance;
+  {
+    const char* dbg = getenv("PT_DEBUG_ALBEDO"); // texture debug view
+    gpu_scene->debug_albedo = (dbg && dbg[0] == '1') ? 1 : 0;
+  }
   render_init(gpu_buffers, (int)w, (int)h); // (re)allocates if size changed, zeroes accumulator
   const GPUSceneView view = gpu_scene->view();
   const GPUCamera cam = camera->to_gpu();
   const int ns_aa = std::max(1, (int)pt->ns_aa);
+
+  Timer display;
+  display.start();
+
   for (int s = 0; s < ns_aa; s++) {
-    if (!continueRaytracing) break; // stop() was called
+    if (!continueRaytracing) {
+      fprintf(stdout, "Rendering stopped!");
+      break; // stop() was called
+    }
     render(view, cam, gpu_buffers);
-    fprintf(stdout, "\r[PathTracer] Progress: %5.1f%% (%d/%d spp)",
-            100.0 * (s+1) / ns_aa, (s+1), ns_aa);
-    fflush(stdout);
+    display.stop();  // Timer::duration() is last start() -> last stop(), so stop() first
+    if(display.duration() > 0.25){
+      render_readback(gpu_buffers, pt->sampleBuffer.data.data());
+      pt->write_to_framebuffer(frameBuffer, 0, 0, w, h);
+      fprintf(stdout, "\r[PathTracer] Progress: %5.1f%% (%d/%d spp)",
+              100.0 * (s+1) / ns_aa, (s+1), ns_aa);
+      fflush(stdout);
+      display.start();
+    }
   }
+  display.stop();
   fprintf(stdout, "\n");
   render_readback(gpu_buffers, pt->sampleBuffer.data.data());
   pt->write_to_framebuffer(frameBuffer, 0, 0, w, h);
@@ -527,7 +552,9 @@ void RaytracedRenderer::visualize_cell() const {
  * If the pathtracer is in VISUALIZE, handle key presses to traverse the bvh.
  */
 void RaytracedRenderer::key_press(int key) {
-  BVHNode *current = selectionHistory.top();
+  // The CPU BVH (and so the selection history) only exists once the BVH
+  // visualizer has been opened; in render mode the stack is empty.
+  BVHNode *current = selectionHistory.empty() ? nullptr : selectionHistory.top();
   switch (key) {
   case ']':
     pt->ns_aa *=2;
@@ -577,17 +604,17 @@ void RaytracedRenderer::key_press(int key) {
     fprintf(stdout, "[PathTracer] Camera focal distance increased to %f.\n", pt->camera->focalDistance);
     break;
   case KEYBOARD_UP:
-    if (current != bvh->get_root()) {
+    if (current && current != bvh->get_root()) {
         selectionHistory.pop();
     }
     break;
   case KEYBOARD_LEFT:
-    if (current->l) {
+    if (current && current->l) {
         selectionHistory.push(current->l);
     }
     break;
   case KEYBOARD_RIGHT:
-    if (current->l) {
+    if (current && current->r) {
         selectionHistory.push(current->r);
     }
     break;
@@ -599,6 +626,35 @@ void RaytracedRenderer::key_press(int key) {
     else
       fprintf(stdout, "[PathTracer] No longer in cell render mode.\n");
     break;
+
+  case 'z': case 'Z':
+  case 'x': case 'X':
+  case 't': case 'T':
+  case 'n': case 'N':
+  case 'm': case 'M': {
+    if (key == 't' || key == 'T') {
+      pt->filmic = !pt->filmic;
+    } else if (key == 'n' || key == 'N') {
+      // compress more: lower white point (first press turns it on)
+      pt->white = pt->white > 0.f ? std::max(pt->white * 0.5f, 0.25f) : 16.f;
+    } else if (key == 'm' || key == 'M') {
+      // compress less: higher white point, off past 64
+      if (pt->white > 0.f) pt->white = pt->white * 2.f > 64.f ? 0.f : pt->white * 2.f;
+    } else {
+      pt->exposure *= (key == 'x' || key == 'X') ? sqrtf(2.f) : sqrtf(0.5f);
+    }
+    if (pt->white > 0.f)
+      fprintf(stdout, "[PathTracer] Exposure %+.1f stops, filmic %s, highlight white point %g\n",
+              log2f(pt->exposure), pt->filmic ? "on" : "off", pt->white);
+    else
+      fprintf(stdout, "[PathTracer] Exposure %+.1f stops, filmic %s, highlight compression off\n",
+              log2f(pt->exposure), pt->filmic ? "on" : "off");
+    // A finished image is re-tonemapped from its samples right away; a render
+    // in progress picks the new settings up at its next display update.
+    if (state == DONE)
+      pt->write_to_framebuffer(frameBuffer, 0, 0, frameBuffer.w, frameBuffer.h);
+    break;
+  }
 
   case 'a': case 'A':
     show_rays = !show_rays;
@@ -667,6 +723,8 @@ void RaytracedRenderer::raytrace_cell(ImageBuffer& buffer) {
 }
 
 void RaytracedRenderer::autofocus(Vector2D loc) {
+  ensure_accel();
+  pt->bvh = bvh;
   pt->autofocus(loc);
 }
 
@@ -697,9 +755,11 @@ void RaytracedRenderer::worker_thread() {
   if (continueRaytracing && workerDoneCount == numWorkerThreads) {
     timer.stop();
     fprintf(stdout, "\r[PathTracer] Rendering... 100%%! (%.4fs)\n", timer.duration());
-    fprintf(stdout, "[PathTracer] BVH traced %llu rays.\n", bvh->total_rays);
-    fprintf(stdout, "[PathTracer] Average speed %.4f million rays per second.\n", (double)bvh->total_rays / timer.duration() * 1e-6);
-    fprintf(stdout, "[PathTracer] Averaged %f intersection tests per ray.\n", (((double)bvh->total_isects)/bvh->total_rays));
+    if (bvh) { // (CPU path; the BVH is only built on demand now)
+      fprintf(stdout, "[PathTracer] BVH traced %llu rays.\n", bvh->total_rays);
+      fprintf(stdout, "[PathTracer] Average speed %.4f million rays per second.\n", (double)bvh->total_rays / timer.duration() * 1e-6);
+      fprintf(stdout, "[PathTracer] Averaged %f intersection tests per ray.\n", (((double)bvh->total_isects)/bvh->total_rays));
+    }
 
     lock_guard<std::mutex> lk(m_done);
     state = DONE;

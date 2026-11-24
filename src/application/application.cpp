@@ -8,6 +8,7 @@
 #include "scene/gl_scene/spot_light.h"
 #include "scene/gl_scene/sphere.h"
 #include "scene/gl_scene/mesh.h"
+#include "scene/gl_scene/tri_mesh.h"
 
 using Collada::CameraInfo;
 using Collada::LightInfo;
@@ -37,6 +38,9 @@ Application::Application(AppConfig config, bool gl) {
     config.pathtracer_lensRadius,
     config.pathtracer_focalDistance
   );
+  renderer->set_exposure(config.pathtracer_exposure_ev);
+  renderer->set_filmic(config.pathtracer_filmic);
+  renderer->set_white(config.pathtracer_white);
   filename = config.pathtracer_filename;
 }
 
@@ -189,7 +193,13 @@ void Application::update_gl_camera() {
 void Application::resize(size_t w, size_t h) {
   screenW = w;
   screenH = h;
-  camera.set_screen_size(w, h);
+  if (keep_file_fov) {
+    // Re-fit the file's FOV to the new aspect ratio (position is untouched).
+    camera.configure(file_camera_info, w, h);
+    canonicalCamera.configure(file_camera_info, w, h);
+  } else {
+    camera.set_screen_size(w, h);
+  }
   if (gl_window) {
     textManager.resize(w, h);
     set_projection_matrix();
@@ -233,7 +243,7 @@ void Application::load(SceneInfo* sceneInfo) {
   vector<GLScene::SceneObject *> objects;
 
   // save camera position to update camera control later
-  CameraInfo *c;
+  CameraInfo *c = nullptr;
   Vector3D c_pos = Vector3D();
   Vector3D c_dir = Vector3D();
 
@@ -264,6 +274,10 @@ void Application::load(SceneInfo* sceneInfo) {
         objects.push_back(
           init_polymesh(static_cast<PolymeshInfo&>(*instance), transform));
         break;
+      case Collada::Instance::TRIMESH:
+        objects.push_back(new GLScene::TriMesh(
+          static_cast<Collada::TriMeshInfo&>(*instance), transform));
+        break;
       case Collada::Instance::MATERIAL:
         init_material(static_cast<MaterialInfo&>(*instance));
         break;
@@ -271,6 +285,7 @@ void Application::load(SceneInfo* sceneInfo) {
   }
 
   scene = new GLScene::Scene(objects, lights);
+  scene->textures = sceneInfo->textures;
 
   const BBox& bbox = scene->get_bbox();
   if (!bbox.empty()) {
@@ -281,6 +296,17 @@ void Application::load(SceneInfo* sceneInfo) {
     double view_distance = canonical_view_distance * 2;
     double min_view_distance = canonical_view_distance / 10.0;
     double max_view_distance = canonical_view_distance * 20.0;
+
+    if (c && c->has_world_pose) {
+      // Exact camera from the file (glTF). The camera is an orbit camera, so
+      // put the orbit target straight ahead of the saved position; the view
+      // then starts exactly where the file says and orbits around that point.
+      c_dir = -c->world_view_dir.unit();  // direction from target to camera
+      view_distance = canonical_view_distance;
+      target = c->world_position - c_dir * view_distance;
+      keep_file_fov = true;
+      file_camera_info = *c;
+    }
 
     canonicalCamera.place(target,
                           acos(c_dir.y),
@@ -451,7 +477,13 @@ void Application::keyboard_event(int key, int event, unsigned char mods) {
             renderer->key_press(key);
             renderer->start_raytracing();
             break;
-          case 'C': 
+          case 'C':
+          // exposure / tone curve: display only, no re-render
+          case 'z': case 'Z':
+          case 'x': case 'X':
+          case 't': case 'T':
+          case 'n': case 'N':
+          case 'm': case 'M':
             renderer->key_press(key);
             break;
           case 'r': case 'R':

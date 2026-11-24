@@ -61,15 +61,6 @@ void Triangle::drawOutline(const Color &c, float alpha) const {
   glVertex3d(p3.x, p3.y, p3.z);
   glEnd();
 }
-void Triangle::createGPU(GPUPrimitive_t* prim) const {
-  prim->a = this->p1;
-  prim->b = this->p2;
-  prim->c = this->p3;
-  prim->na = this->n1;
-  prim->nb = this->n2;
-  prim->nc = this->n3;
-  prim->type = GPU_PRIM_TRIANGLE;
-}
 
 } // namespace SceneObjects
 } // namespace CGL

@@ -83,7 +83,7 @@ class Sphere : public Primitive {
   * Draw outline with OpenGL (for visualizer)
   */
   void drawOutline(const Color& c, float alpha) const;
-  void createGPU(GPUPrimitive_t* prim) const;
+  void createGPU(GPUSphere_t* sphere) const;
 
   /**
    * Tests for ray-sphere intersection, returning true if there are

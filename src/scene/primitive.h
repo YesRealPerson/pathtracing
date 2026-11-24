@@ -65,7 +65,8 @@ class Primitive {
    */
   virtual void drawOutline(const Color& c, float alpha) const = 0;
 
-  virtual void createGPU(GPUPrimitive_t* prim) const = 0;
+  // (GPU conversion lives in GPUScene::upload: meshes are uploaded from their
+  // vertex arrays directly, spheres via Sphere::createGPU.)
 
 };
 

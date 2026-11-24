@@ -102,6 +102,9 @@ namespace CGL {
         double tm_level;                           ///< exposure level
         double tm_key;                             ///< key value
         double tm_wht;                             ///< white point
+        float exposure = 1.0f;                     ///< linear multiplier (-x, 2^stops)
+        bool filmic = false;                       ///< ACES filmic tone curve (-T)
+        float white = 0.f;                         ///< highlight white point (-W), 0 = off
     };
 
 }  // namespace CGL

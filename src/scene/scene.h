@@ -3,7 +3,9 @@
 
 #include "CGL/CGL.h"
 #include "primitive.h"
+#include "texture.h"
 
+#include <memory>
 #include <vector>
 
 namespace CGL { namespace SceneObjects {
@@ -62,6 +64,9 @@ struct Scene {
 
   // for sake of consistency of the scene object Interface
   std::vector<SceneLight*> lights;
+
+  // Textures referenced by BSDF texture slots (glTF scenes); may be null.
+  std::shared_ptr<TextureSet> textures;
 
   // TODO (sky) :
   // Adding object with emission BSDFs as mesh lights and sphere lights so 

@@ -41,7 +41,7 @@ void PathTracer::clear() {
 
 void PathTracer::write_to_framebuffer(ImageBuffer &framebuffer, size_t x0,
                                       size_t y0, size_t x1, size_t y1) {
-  sampleBuffer.toColor(framebuffer, x0, y0, x1, y1);
+  sampleBuffer.toColor(framebuffer, x0, y0, x1, y1, exposure, filmic, white);
 }
 
 Vector3D

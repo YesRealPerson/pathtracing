@@ -1,5 +1,7 @@
 #include "light.h"
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 
 #include "pathtracer/sampler.h"
@@ -59,8 +61,21 @@ void InfiniteHemisphereLight::createGPU(GPULight_t* light) const {
 
 // Point Light //
 
-PointLight::PointLight(const Vector3D rad, const Vector3D pos) : 
-  radiance(rad), position(pos) { }
+// 1/d^2 with glTF's range window; 1 when inverse_square is off.
+static double punctual_attenuation(bool inverse_square, float range, double d2) {
+  if (!inverse_square) return 1.0;
+  double att = 1.0 / std::max(d2, 1e-8);
+  if (range > 0) {
+    double q = d2 / ((double)range * range);
+    double w = std::min(std::max(1.0 - q * q, 0.0), 1.0);
+    att *= w * w;
+  }
+  return att;
+}
+
+PointLight::PointLight(const Vector3D rad, const Vector3D pos,
+                       bool inverse_square, float range) :
+  radiance(rad), position(pos), inverse_square(inverse_square), range(range) { }
 
 Vector3D PointLight::sample_L(const Vector3D p, Vector3D* wi,
                              double* distToLight,
@@ -69,7 +84,7 @@ Vector3D PointLight::sample_L(const Vector3D p, Vector3D* wi,
   *wi = d.unit();
   *distToLight = d.norm();
   *pdf = 1.0;
-  return radiance;
+  return radiance * punctual_attenuation(inverse_square, range, d.norm2());
 }
 
 void PointLight::createGPU(GPULight_t* light) const {
@@ -77,24 +92,41 @@ void PointLight::createGPU(GPULight_t* light) const {
   light->type = GPU_LIGHT_POINT;
   light->radiance = this->radiance;
   light->position = this->position;
+  light->inv_square = this->inverse_square ? 1 : 0;
+  light->range = this->range;
 }
 
 
 // Spot Light //
 
-SpotLight::SpotLight(const Vector3D rad, const Vector3D pos,
-                     const Vector3D dir, double angle) {
-
-}
+SpotLight::SpotLight(const Vector3D rad, const Vector3D pos, const Vector3D dir,
+                     float inner, float outer, bool inverse_square, float range)
+  : radiance(rad), position(pos), direction(dir.unit()),
+    cos_inner(cosf(inner)), cos_outer(cosf(outer)),
+    inverse_square(inverse_square), range(range) { }
 
 Vector3D SpotLight::sample_L(const Vector3D p, Vector3D* wi,
                              double* distToLight, double* pdf) const {
-  return Vector3D();
+  Vector3D d = position - p;
+  *wi = d.unit();
+  *distToLight = d.norm();
+  *pdf = 1.0;
+  double cd = -dot(direction, *wi);
+  double t = (cd - cos_outer) / std::max(cos_inner - cos_outer, 1e-4f);
+  t = std::min(std::max(t, 0.0), 1.0);
+  return radiance * (t * t * punctual_attenuation(inverse_square, range, d.norm2()));
 }
 
 void SpotLight::createGPU(GPULight_t* light) const {
   *light = GPULight_t{};
-  light->type = GPU_LIGHT_UNKNOWN;
+  light->type = GPU_LIGHT_SPOT;
+  light->radiance = this->radiance;
+  light->position = this->position;
+  light->direction = this->direction;
+  light->cos_inner = this->cos_inner;
+  light->cos_outer = this->cos_outer;
+  light->inv_square = this->inverse_square ? 1 : 0;
+  light->range = this->range;
 }
 
 

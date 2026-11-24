@@ -108,6 +108,23 @@ public:
   void set_gpu_scene(GPUScene* gs) { gpu_scene = gs; }
 
   /**
+   * Exposure in stops (the -x option): the image is scaled by 2^ev before
+   * gamma / clamping. 0 = unchanged.
+   */
+  void set_exposure(float ev) { pt->exposure = powf(2.0f, ev); }
+
+  /**
+   * Use the ACES filmic tone curve instead of clipping highlights (-T).
+   */
+  void set_filmic(bool on) { pt->filmic = on; }
+
+  /**
+   * Highlight compression white point (-W): brightness at this value maps to
+   * white and brighter values roll off smoothly, hue kept. 0 = off.
+   */
+  void set_white(float w) { pt->white = w; }
+
+  /**
    * Sets the pathtracer's frame size. If in a running state (VISUALIZE,
    * RENDERING, or DONE), transitions to READY b/c a changing window size
    * would invalidate the output. If in INIT and configuration is done,
@@ -185,6 +202,12 @@ public:
    * Build acceleration structures.
    */
   void build_accel();
+
+  /**
+   * Build the CPU BVH if it hasn't been built yet. Only the visualizer and
+   * autofocus need it; GPU rendering uses GPUScene's own BVH.
+   */
+  void ensure_accel();
 
   /**
    * Visualize acceleration structures.

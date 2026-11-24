@@ -16,38 +16,42 @@ namespace CGL { namespace SceneObjects {
 Mesh::Mesh(const HalfedgeMesh& mesh, BSDF* bsdf) {
 
   unordered_map<const Vertex *, int> vertexLabels;
-  vector<const Vertex *> verts;
+  auto data = std::make_shared<MeshData>();
 
-  size_t vertexI = 0;
+  int vertexI = 0;
   for (VertexCIter it = mesh.verticesBegin(); it != mesh.verticesEnd(); it++) {
     const Vertex *v = &*it;
-    verts.push_back(v);
-    vertexLabels[v] = vertexI;
-    vertexI++;
-  }
-
-  positions = new Vector3D[vertexI];
-  normals   = new Vector3D[vertexI];
-  for (int i = 0; i < vertexI; i++) {
-    positions[i] = verts[i]->position;
-    normals[i]   = verts[i]->normal;
+    vertexLabels[v] = vertexI++;
+    data->positions.push_back(v->position);
+    data->normals.push_back(v->normal);
   }
 
   for (FaceCIter f = mesh.facesBegin(); f != mesh.facesEnd(); f++) {
     HalfedgeCIter h = f->halfedge();
-    indices.push_back(vertexLabels[&*h->vertex()]);
-    indices.push_back(vertexLabels[&*h->next()->vertex()]);
-    indices.push_back(vertexLabels[&*h->next()->next()->vertex()]);
+    data->indices.push_back(vertexLabels[&*h->vertex()]);
+    data->indices.push_back(vertexLabels[&*h->next()->vertex()]);
+    data->indices.push_back(vertexLabels[&*h->next()->next()->vertex()]);
   }
 
+  mesh_data = std::move(data);
+  positions = mesh_data->positions.data();
+  normals   = mesh_data->normals.data();
   this->bsdf = bsdf;
 
 }
 
+Mesh::Mesh(std::shared_ptr<const MeshData> data, BSDF* bsdf)
+    : bsdf(bsdf), mesh_data(std::move(data)) {
+  positions = mesh_data->positions.data();
+  normals   = mesh_data->normals.data();
+}
+
 vector<Primitive*> Mesh::get_primitives() const {
 
+  const vector<uint32_t>& indices = mesh_data->indices;
   vector<Primitive*> primitives;
   size_t num_triangles = indices.size() / 3;
+  primitives.reserve(num_triangles);
   for (size_t i = 0; i < num_triangles; ++i) {
     Triangle* tri = new Triangle(this, indices[i * 3],
                                        indices[i * 3 + 1],

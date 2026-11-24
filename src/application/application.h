@@ -87,6 +87,10 @@ struct AppConfig {
 
   double pathtracer_lensRadius;
   double pathtracer_focalDistance;
+
+  float pathtracer_exposure_ev = 0.0f; ///< -x: image exposure in stops
+  bool pathtracer_filmic = false;      ///< -T: ACES filmic tone curve
+  float pathtracer_white = 0.0f;       ///< -W: highlight white point (0 = off)
 };
 
 class Application : public Renderer {
@@ -142,6 +146,11 @@ private:
   // orientation are reset but NOT the aspect ratio.
   Camera camera;
   Camera canonicalCamera;
+
+  // Set when the scene file has an exact camera (glTF): resize() then keeps
+  // the file's field of view instead of the window's pixel focal length.
+  bool keep_file_fov = false;
+  Collada::CameraInfo file_camera_info;
 
   size_t screenW;
   size_t screenH;

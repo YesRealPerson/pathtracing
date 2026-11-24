@@ -46,9 +46,15 @@ class InfiniteHemisphereLight : public SceneLight {
 
 // Point Light //
 
+// Point and spot lights: with inverse_square == false (COLLADA, the CS184
+// default) radiance arrives unattenuated. With inverse_square == true (glTF)
+// `radiance` is an intensity that falls off as 1/d^2, windowed to zero at
+// `range` when range > 0.
+
 class PointLight : public SceneLight {
- public: 
-  PointLight(const Vector3D rad, const Vector3D pos);
+ public:
+  PointLight(const Vector3D rad, const Vector3D pos,
+             bool inverse_square = false, float range = 0);
   Vector3D sample_L(const Vector3D p, Vector3D* wi, double* distToLight,
                     double* pdf) const;
   bool is_delta_light() const { return true; }
@@ -56,15 +62,20 @@ class PointLight : public SceneLight {
 
   Vector3D radiance;
   Vector3D position;
-  
+  bool inverse_square;
+  float range;
+
 }; // class PointLight
 
 // Spot Light //
 
 class SpotLight : public SceneLight {
  public:
-  SpotLight(const Vector3D rad, const Vector3D pos, 
-            const Vector3D dir, double angle);
+  // inner / outer: cone half-angles in radians (glTF semantics: full
+  // intensity inside `inner`, smooth falloff to zero at `outer`).
+  SpotLight(const Vector3D rad, const Vector3D pos, const Vector3D dir,
+            float inner, float outer, bool inverse_square = false,
+            float range = 0);
   Vector3D sample_L(const Vector3D p, Vector3D* wi, double* distToLight,
                     double* pdf) const;
   bool is_delta_light() const { return true; }
@@ -72,8 +83,10 @@ class SpotLight : public SceneLight {
 
   Vector3D radiance;
   Vector3D position;
-  Vector3D direction;
-  double angle;
+  Vector3D direction; ///< unit axis the light shines along
+  float cos_inner, cos_outer;
+  bool inverse_square;
+  float range;
 
 }; // class SpotLight
 
