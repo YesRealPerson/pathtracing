@@ -1,5 +1,12 @@
 Notepad of useful commands because lol
-./build/pathtracer.exe -r 800 600 ./dae/sky/CBempty.dae
+./build/pathtracer.exe -r 800 600 -a 64 0.05 -s 2048 -l 1 -m 5 ./dae/sky/CBbunny.dae
+./build/pathtracer.exe -r 800 600 -a 64 0.05 -s 2048 -l 1 -m 5 .\glb\CBbunny.glb
+./build/pathtracer.exe -r 1920 1080 -a 64 0.05 -s 2048 -l 1 -m 5 .\glb\CBbunny.glb
+./build/pathtracer.exe -r 1920 1080 -a 64 0.05 -s 2048 -l 1 -m 5 .\glb\marathon_menu.glb
+
+# NOTE
+This branch is heavily edited by Claude to read in .glb files. DO NOT MERGE THIS BRANCH INTO MAIN UNTIL EVERYTHING ELSE IS DONE.
+This branch will be pulled purely for demonstration purposes later.
 
 ## Acknowledgements
 Claude was used for a lot of debugging, and pointing out design flaws when it saw them while debugging 💀. Also it made the CMake file because I don't know how to do that.
@@ -54,20 +61,21 @@ GPU versions for the following
 2. Intersect
 3. intersect_triangle
 4. intersect_sphere TODO
-5. intersect_bbox TODO
-6. intersect_scene TODO (claude dumb version for now, the GPU unironically just brute forces this shit though)
+5. intersect_bbox
+6. intersect_scene
 
 ## Important Changes
 1. Replaced CPU rendering code for GPU code (see changes to application.cpp and raytraced_renderer.cpp, namely set_up_pathtracer, raytrace_gpu, and start_raytracing)
-2. Added createGPU functions for all primitives, see comment in gpu_scene.h:19 
-    - Notably BVHAccelerator is a Primitive subclass which has a degenerate createGPU function
-        - Bandaid but who cares
+2. Added createGPU functions for all primitives, see comment in gpu_scene.h:19
 
 ## Main TODOs
-1. Construct proper BVH and BVH walking
-2. Sphere intersection
-3. Global Illumination
-    - IDK For now
+Finish up realtime
+1. Sphere intersection
+2. Live Camera Movement
+Stretch goals
+3. ReSTIR
+4. ReSTIR GI
+5. ReSTIR PT
 
 # CLAUDE README STUFF (not human written)
 
@@ -84,11 +92,6 @@ GPU versions for the following
 `.glb` and `.gltf` files now load alongside `.dae`; the loader is picked by
 file extension:
 
-```
-cd build
-./pathtracer.exe -f ../out/hideout.png -r 1504 800 -s 512 -l 4 -m 6 -x 2 -T ../glb/hideout_marathon_baked.glb
-```
-
 - **Loading:** meshes skip the half-edge mesh, so messy geometry loads.
   Base-color and emissive textures work, including `KHR_texture_transform`.
   Point, spot and sun lights use physical units (÷683 lm/W, matching Blender),
@@ -100,15 +103,6 @@ cd build
 - **Renderer fixes for all scenes:** double-sided shading, NaN black pixels,
   and adaptive sampling stopping at black.
 - **Still diffuse-only on the GPU:** mirror and glass render black.
-- **Hideout:** the plain export dropped the decal textures. Use
-  `glb/hideout_marathon_baked.glb` instead, made by
-  `tools/blender_bake_for_gltf.py`, which bakes every material to textures in
-  Blender, including decal transparency, which the renderer now supports
-  (glTF `alphaMode`), and the area lights (written to glTF extras, which the
-  loader reads). Decals, cut-outs and the cyan fill light now render.
-  Use `-x 2`. Still missing vs. the
-  reference: fog and the glossy floor. Its textures take about 2.8 GB of GPU
-  memory.
 
 Details, verification against Blender, and next steps:
 [src/scene/gltf/README.md](src/scene/gltf/README.md).
@@ -121,10 +115,6 @@ Details, verification against Blender, and next steps:
 | Location | TODO |
 |---|---|
 | [gpu_intersect.cuh:75](src/pathtracer/gpu_intersect.cuh#L75) | `intersect_sphere`: not written, so spheres are invisible (no hits, no shadows). |
-| [gpu_intersect.cuh:96](src/pathtracer/gpu_intersect.cuh#L96) | `intersect_bbox`: placeholder returning `true`. Needed before real BVH traversal. |
-| [application.cpp:644](src/application/application.cpp#L644) | Make a proper BVH: flatten `BVHAccel` into `GPUBVHNode`s, and upload primitives in BVH order (the leaves index into the array). |
-| [raytraced_renderer.cpp:312](src/pathtracer/raytraced_renderer.cpp#L312) | `render_kernel` only does zero + one bounce. `max_ray_depth` and `samples_per_batch` are synced into `GPUScene` but nothing reads them yet (global illumination, adaptive sampling). |
-| [raytraced_renderer.cpp:317](src/pathtracer/raytraced_renderer.cpp#L317) | Ray count metric. |
 
 Not yet on the GPU:
 - Sphere, mesh and environment lights upload as `GPU_LIGHT_UNKNOWN` and `render_kernel` skips them (spot lights are now `GPU_LIGHT_SPOT`). Rays that miss return black.
